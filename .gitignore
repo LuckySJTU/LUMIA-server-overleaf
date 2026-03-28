@@ -4,3 +4,4 @@
 # user defined files
 .env
 docker-compose.override.yml
+deploy/overleaf.lumia.env
