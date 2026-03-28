@@ -96,12 +96,56 @@ const AuthenticationController = {
     cb(null, user)
   },
 
+  usesLdapAuthentication() {
+    return Boolean(Settings.ldap?.enable)
+  },
+
+  getLoginIdentifierField() {
+    return AuthenticationController.usesLdapAuthentication()
+      ? 'username'
+      : 'email'
+  },
+
+  getLoginIdentifier(req) {
+    return req.body?.[AuthenticationController.getLoginIdentifierField()]
+  },
+
+  getLoginStrategy() {
+    return AuthenticationController.usesLdapAuthentication() ? 'ldap' : 'local'
+  },
+
+  getLoginMethodName() {
+    if (!AuthenticationController.usesLdapAuthentication()) {
+      return 'Password login'
+    }
+    return `${Settings.ldap?.loginLabel || 'LDAP'} login`
+  },
+
+  normalizePassportFailure(strategy, info, req) {
+    if (info?.redir || strategy !== 'ldap') {
+      return info
+    }
+
+    if (info?.text || info?.key) {
+      return info
+    }
+
+    return {
+      status: info?.status || 401,
+      type: 'error',
+      text: req.i18n.language?.startsWith('zh')
+        ? '用户名或密码错误'
+        : 'Invalid username or password',
+    }
+  },
+
   passportLogin(req, res, next) {
     // This function is middleware which wraps the passport.authenticate middleware,
     // so we can send back our custom `{message: {text: "", type: ""}}` responses on failure,
     // and send a `{redir: ""}` response on success
+    const strategy = AuthenticationController.getLoginStrategy()
     passport.authenticate(
-      'local',
+      strategy,
       { keepSessionInfo: true },
       async function (err, user, info) {
         if (err) {
@@ -110,8 +154,11 @@ const AuthenticationController = {
         if (user) {
           // `user` is either a user object or false
           AuthenticationController.setAuditInfo(req, {
-            method: 'Password login',
+            method: AuthenticationController.getLoginMethodName(),
           })
+          if (strategy === 'ldap') {
+            req.user_info = { ...(req.user_info || {}), auth_provider: 'ldap' }
+          }
 
           try {
             // We could investigate whether this can be done together with 'preFinishLogin' instead of being its own hook
@@ -125,6 +172,11 @@ const AuthenticationController = {
             return next(err)
           }
         } else {
+          info = AuthenticationController.normalizePassportFailure(
+            strategy,
+            info,
+            req
+          )
           if (info.redir != null) {
             return res.json({ redir: info.redir })
           } else {
@@ -240,12 +292,17 @@ const AuthenticationController = {
         },
       }
     }
-    AuthenticationController.setAuditInfo(req, { method: 'Password login' })
+    AuthenticationController.setAuditInfo(req, {
+      method: AuthenticationController.getLoginMethodName(),
+    })
 
     const { fromKnownDevice } = AuthenticationController.getAuditInfo(req)
     const auditLog = {
       ipAddress: req.ip,
-      info: { method: 'Password login', fromKnownDevice },
+      info: {
+        method: AuthenticationController.getLoginMethodName(),
+        fromKnownDevice,
+      },
     }
 
     let user, isPasswordReused
@@ -643,7 +700,10 @@ function _loginAsyncHandlers(req, user, anonymousAnalyticsId, isNewUser) {
   UserHandler.promises.populateTeamInvites(user).catch(err => {
     logger.warn({ err }, 'error setting up login data')
   })
-  LoginRateLimiter.recordSuccessfulLogin(user.email, () => {})
+  LoginRateLimiter.recordSuccessfulLogin(
+    AuthenticationController.getLoginIdentifier(req) || user.email,
+    () => {}
+  )
   AuthenticationController._recordSuccessfulLogin(user._id, () => {})
   AuthenticationController.ipMatchCheck(req, user)
   Analytics.recordEventForUserInBackground(user._id, 'user-logged-in', {

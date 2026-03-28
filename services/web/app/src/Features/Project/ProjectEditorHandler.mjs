@@ -1,9 +1,12 @@
 import _ from 'lodash'
 import Path from 'node:path'
+import Settings from '@overleaf/settings'
 let ProjectEditorHandler
 
 export default ProjectEditorHandler = {
-  trackChangesAvailable: false,
+  trackChangesAvailable:
+    Boolean(Settings.enableComments) ||
+    Boolean(Settings.moduleImportSequence?.includes('track-changes')),
 
   buildProjectModelView(
     project,

@@ -303,6 +303,16 @@ const settings = {
     trackChanges: true,
     references: true,
   },
+
+  enableComments: process.env.OVERLEAF_ENABLE_COMMENTS === 'true',
+
+  moduleImportSequence: [
+    'history-v1',
+    'launchpad',
+    'server-ce-scripts',
+    'user-activate',
+    ...(process.env.EXTERNAL_AUTH === 'ldap' ? ['ldap-auth'] : []),
+  ],
 }
 
 // # OPTIONAL CONFIGURABLE SETTINGS
@@ -345,6 +355,29 @@ if (process.env.OVERLEAF_LOGIN_SUPPORT_TEXT != null) {
 
 if (process.env.OVERLEAF_LOGIN_SUPPORT_TITLE != null) {
   settings.nav.login_support_title = process.env.OVERLEAF_LOGIN_SUPPORT_TITLE
+}
+
+if (process.env.EXTERNAL_AUTH === 'ldap') {
+  settings.ldap = {
+    enable: true,
+    url: process.env.OVERLEAF_LDAP_URL,
+    searchBase: process.env.OVERLEAF_LDAP_SEARCH_BASE,
+    searchFilter:
+      process.env.OVERLEAF_LDAP_SEARCH_FILTER || '(uid={{username}})',
+    bindDn: process.env.OVERLEAF_LDAP_BIND_DN,
+    bindCredentials: process.env.OVERLEAF_LDAP_BIND_CREDENTIALS,
+    emailAtt: process.env.OVERLEAF_LDAP_EMAIL_ATT || 'mail',
+    nameAtt: process.env.OVERLEAF_LDAP_NAME_ATT || 'cn',
+    firstNameAtt: process.env.OVERLEAF_LDAP_FIRST_NAME_ATT,
+    lastNameAtt: process.env.OVERLEAF_LDAP_LAST_NAME_ATT || 'sn',
+    uidAtt: process.env.OVERLEAF_LDAP_UID_ATT || 'uid',
+    overleafEmailDomain: process.env.OVERLEAF_LDAP_OVERLEAF_EMAIL_DOMAIN,
+    updateUserDetailsOnLogin:
+      process.env.OVERLEAF_LDAP_UPDATE_USER_DETAILS_ON_LOGIN === 'true',
+    isAdminAtt: process.env.OVERLEAF_LDAP_IS_ADMIN_ATT,
+    isAdminAttValue: process.env.OVERLEAF_LDAP_IS_ADMIN_ATT_VALUE,
+    loginLabel: process.env.OVERLEAF_LDAP_LOGIN_LABEL || 'LDAP',
+  }
 }
 
 // Sending Email

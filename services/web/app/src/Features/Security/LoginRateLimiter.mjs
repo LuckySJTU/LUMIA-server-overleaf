@@ -1,7 +1,6 @@
 import { RateLimiter } from '../../infrastructure/RateLimiter.mjs'
 import { callbackify } from '@overleaf/promise-utils'
 import Settings from '@overleaf/settings'
-import EmailHelper from '../Helpers/EmailHelper.mjs'
 
 const rateLimiterLoginEmail = new RateLimiter(
   'login',
@@ -11,10 +10,20 @@ const rateLimiterLoginEmail = new RateLimiter(
   }
 )
 
-async function processLoginRequest(email) {
-  email = EmailHelper.emailSchema.parse(email)
+function normalizeLoginIdentifier(identifier) {
+  if (typeof identifier !== 'string') {
+    return ''
+  }
+  return identifier.trim().toLowerCase()
+}
+
+async function processLoginRequest(identifier) {
+  identifier = normalizeLoginIdentifier(identifier)
+  if (!identifier) {
+    return true
+  }
   try {
-    await rateLimiterLoginEmail.consume(email, 1, {
+    await rateLimiterLoginEmail.consume(identifier, 1, {
       method: 'email',
     })
     return true
@@ -27,8 +36,12 @@ async function processLoginRequest(email) {
   }
 }
 
-async function recordSuccessfulLogin(email) {
-  await rateLimiterLoginEmail.delete(email)
+async function recordSuccessfulLogin(identifier) {
+  identifier = normalizeLoginIdentifier(identifier)
+  if (!identifier) {
+    return
+  }
+  await rateLimiterLoginEmail.delete(identifier)
 }
 
 const LoginRateLimiter = {

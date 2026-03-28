@@ -2,7 +2,8 @@
 # Overleaf Base Image (sharelatex/sharelatex-base)
 # --------------------------------------------------
 
-FROM phusion/baseimage:noble-1.0.2
+ARG PHUSION_BASEIMAGE_TAG=phusion/baseimage:noble-1.0.2
+FROM ${PHUSION_BASEIMAGE_TAG}
 
 # Makes sure LuaTex cache is writable
 # -----------------------------------
@@ -33,6 +34,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 &&  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
 &&  apt-get update \
 &&  apt-get install -y nodejs \
+&&  npm install --global npm@11.6.2 \
     \
 &&  rm -rf \
 # We are adding a custom nginx config in the main Dockerfile.
@@ -48,6 +50,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #     --build-arg TEXLIVE_MIRROR=https://ctan.crest.fr/tex-archive/systems/texlive/tlnet \
 #     -f Dockerfile-base -t sharelatex/sharelatex-base .
 ARG TEXLIVE_MIRROR=https://mirror.ox.ac.uk/sites/ctan.org/systems/texlive/tlnet
+ARG TEXLIVE_SCHEME=scheme-medium
+ARG TEXLIVE_EXTRA_PACKAGES="collection-langcjk microtype tools caption booktabs multirow cleveref mathtools todonotes xcolor hyperref enumitem algorithms algorithmicx natbib url xurl units wrapfig float sttools adjustbox threeparttable tablefootnote soul ulem listings pgf pgfplots siunitx makecell preprint forloop xifthen ifmtarg cmap psnfss textcase changepage datetime fmtcount fancyhdr lastpage titlesec needspace kvoptions tcolorbox fontawesome5 xcharter fontaxes mweights newtx zlmtt extsizes geometry colortbl forest elocalloc changes xstring truncate bclogo mdframed zref lipsum tocloft bbding epigraph nextpage minitoc textgreek cjk greek-fontenc cbfonts cbfonts-fd"
 
 RUN mkdir /install-tl-unx \
 &&  wget --quiet https://tug.org/texlive/files/texlive.asc \
@@ -63,7 +67,7 @@ RUN mkdir /install-tl-unx \
 &&  echo "tlpdbopt_autobackup 0" >> /install-tl-unx/texlive.profile \
 &&  echo "tlpdbopt_install_docfiles 0" >> /install-tl-unx/texlive.profile \
 &&  echo "tlpdbopt_install_srcfiles 0" >> /install-tl-unx/texlive.profile \
-&&  echo "selected_scheme scheme-basic" >> /install-tl-unx/texlive.profile \
+&&  echo "selected_scheme ${TEXLIVE_SCHEME}" >> /install-tl-unx/texlive.profile \
     \
 &&  /install-tl-unx/install-tl \
       -profile /install-tl-unx/texlive.profile \
@@ -75,7 +79,7 @@ RUN mkdir /install-tl-unx \
       texcount \
       synctex \
       etoolbox \
-      xetex \
+      ${TEXLIVE_EXTRA_PACKAGES} \
 &&  tlmgr path add \
 &&  rm -rf /install-tl-unx
 

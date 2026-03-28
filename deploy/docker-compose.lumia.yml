@@ -1,0 +1,48 @@
+services:
+  sharelatex:
+    image: ${OVERLEAF_IMAGE:-lumia-overleaf:latest}
+    build:
+      context: ..
+      dockerfile: server-ce/Dockerfile
+      args:
+        OVERLEAF_BASE_TAG: ${OVERLEAF_BASE_TAG:-lumia-overleaf-base:latest}
+    container_name: ${OVERLEAF_CONTAINER_NAME:-lumia-overleaf}
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "${OVERLEAF_HTTP_BIND_IP:-0.0.0.0}:${OVERLEAF_HTTP_PORT:-38080}:80"
+    stop_grace_period: 60s
+    volumes:
+      - ./data/overleaf:/var/lib/overleaf
+    env_file:
+      - ${OVERLEAF_ENV_FILE:-./overleaf.lumia.env}
+
+  mongo:
+    image: ${OVERLEAF_MONGO_IMAGE:-mongo:8.0}
+    container_name: ${OVERLEAF_MONGO_CONTAINER_NAME:-lumia-overleaf-mongo}
+    restart: unless-stopped
+    command: --replSet overleaf
+    environment:
+      MONGO_INITDB_DATABASE: sharelatex
+    volumes:
+      - ./data/mongo:/data/db
+      - ../bin/shared/mongodb-init-replica-set.js:/docker-entrypoint-initdb.d/mongodb-init-replica-set.js:ro
+    extra_hosts:
+      - mongo:127.0.0.1
+    healthcheck:
+      test: echo 'db.stats().ok' | mongosh localhost:27017/sharelatex --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  redis:
+    image: redis:6.2
+    container_name: ${OVERLEAF_REDIS_CONTAINER_NAME:-lumia-overleaf-redis}
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - ./data/redis:/data

@@ -268,10 +268,31 @@ const UserPagesController = {
     if (Object.keys(req.query).length !== 0) {
       metadata.robotsNoindexNofollow = true
     }
+    const ldapLogin = Boolean(Settings.ldap?.enable)
+    const isChinese = req.i18n.language?.toLowerCase().startsWith('zh')
+    const ldapLabel = Settings.ldap?.loginLabel || 'LDAP'
+    const loginHeading =
+      Settings.nav?.login_support_title ||
+      (ldapLogin
+        ? isChinese
+          ? `${ldapLabel} 登录`
+          : `Log in ${ldapLabel}`
+        : req.i18n.translate('log_in'))
+
     res.render('user/login', {
-      title: Settings.nav?.login_support_title || 'login',
+      title: loginHeading,
+      login_heading: loginHeading,
       login_support_title: Settings.nav?.login_support_title,
       login_support_text: Settings.nav?.login_support_text,
+      ldapLogin,
+      loginFieldName: ldapLogin ? 'username' : 'email',
+      loginFieldLabel: ldapLogin
+        ? isChinese
+          ? '用户名'
+          : 'Username'
+        : req.i18n.translate('email'),
+      loginFieldType: ldapLogin ? 'text' : 'email',
+      showPasswordReset: !ldapLogin,
       metadata,
     })
   },

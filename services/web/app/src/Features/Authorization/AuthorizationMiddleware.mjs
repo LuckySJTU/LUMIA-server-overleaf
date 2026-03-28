@@ -207,25 +207,29 @@ async function ensureUserIsMessageAuthor(req, res, next) {
   const projectId = _getProjectId(req)
   const messageId = _getMessageId(req)
   const userId = _getUserId(req)
+  const threadId = req.params.thread_id || null
 
   if (!userId) {
     logger.debug({ projectId, messageId }, 'denying access: no logged in user')
     return HttpErrorHandler.forbidden(req, res)
   }
 
-  const message = await ChatApiHandler.promises.getGlobalMessage(
-    projectId,
-    messageId
-  )
+  const message = threadId
+    ? await ChatApiHandler.promises.getThreadMessage(
+        projectId,
+        threadId,
+        messageId
+      )
+    : await ChatApiHandler.promises.getGlobalMessage(projectId, messageId)
   if (message.user_id === userId) {
     logger.debug(
-      { userId, projectId, messageId },
+      { userId, projectId, threadId, messageId },
       'allowing user to modify their own message'
     )
     return next()
   }
   logger.debug(
-    { userId, projectId, messageId, messageAuthor: message.user_id },
+    { userId, projectId, threadId, messageId, messageAuthor: message.user_id },
     'denying user access to modify message: not the author'
   )
   return HttpErrorHandler.forbidden(req, res)

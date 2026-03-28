@@ -234,7 +234,9 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
   webRouter.post(
     '/login',
     RateLimiterMiddleware.rateLimit(overleafLoginRateLimiter), // rate limit IP (20 / 60s)
-    RateLimiterMiddleware.loginRateLimitEmail(), // rate limit email (10 / 120s)
+    RateLimiterMiddleware.loginRateLimitEmail(
+      AuthenticationController.getLoginIdentifierField()
+    ), // rate limit login identifier (10 / 120s)
     CaptchaMiddleware.validateCaptcha('login'),
     AuthenticationController.passportLogin
   )
@@ -259,7 +261,9 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
     webRouter.post(
       '/login/legacy',
       RateLimiterMiddleware.rateLimit(overleafLoginRateLimiter), // rate limit IP (20 / 60s)
-      RateLimiterMiddleware.loginRateLimitEmail(), // rate limit email (10 / 120s)
+      RateLimiterMiddleware.loginRateLimitEmail(
+        AuthenticationController.getLoginIdentifierField()
+      ), // rate limit login identifier (10 / 120s)
       CaptchaMiddleware.validateCaptcha('login'),
       AuthenticationController.passportLogin
     )
@@ -994,6 +998,58 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
   )
 
   if (Features.hasFeature('chat')) {
+    webRouter.get(
+      '/project/:project_id/threads',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanReadProject,
+      ChatController.getThreads
+    )
+    webRouter.post(
+      '/project/:project_id/thread/:thread_id/messages',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanWriteOrReviewProjectContent,
+      RateLimiterMiddleware.rateLimit(rateLimiters.sendChatMessage),
+      ChatController.sendComment
+    )
+    webRouter.post(
+      '/project/:project_id/thread/:thread_id/messages/:message_id/edit',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanReadProject,
+      AuthorizationMiddleware.ensureUserIsMessageAuthor,
+      ChatController.editComment
+    )
+    webRouter.delete(
+      '/project/:project_id/thread/:thread_id/messages/:message_id',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanReadProject,
+      AuthorizationMiddleware.ensureUserIsMessageAuthor,
+      ChatController.deleteComment
+    )
+    webRouter.delete(
+      '/project/:project_id/thread/:thread_id/own-messages/:message_id',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanReadProject,
+      AuthorizationMiddleware.ensureUserIsMessageAuthor,
+      ChatController.deleteOwnComment
+    )
+    webRouter.post(
+      '/project/:project_id/doc/:doc_id/thread/:thread_id/resolve',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanDeleteOrResolveThread,
+      ChatController.resolveThread
+    )
+    webRouter.post(
+      '/project/:project_id/doc/:doc_id/thread/:thread_id/reopen',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanDeleteOrResolveThread,
+      ChatController.reopenThread
+    )
+    webRouter.delete(
+      '/project/:project_id/doc/:doc_id/thread/:thread_id',
+      AuthorizationMiddleware.blockRestrictedUserFromProject,
+      AuthorizationMiddleware.ensureUserCanDeleteOrResolveThread,
+      ChatController.deleteThread
+    )
     webRouter.get(
       '/project/:project_id/messages',
       AuthorizationMiddleware.blockRestrictedUserFromProject,
