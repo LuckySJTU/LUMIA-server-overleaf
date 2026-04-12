@@ -18,15 +18,22 @@ describe('UserActivateRegister', function () {
       status: 500,
     }
     fetchMock.get('/user/tpds/queues', TPDS_SYNCED)
-    const registerMock = fetchMock.post('/admin/register', endPointResponse)
-    const registerInput = screen.getByLabelText('Emails to register new users')
-    const registerButton = screen.getByRole('button', { name: /register/i })
+    const registerMock = fetchMock.post(
+      '/admin/external-users',
+      endPointResponse
+    )
+    const registerInput = screen.getByLabelText(
+      'Email addresses to invite as external users'
+    )
+    const registerButton = screen.getByRole('button', {
+      name: /send activation email/i,
+    })
 
     fireEvent.change(registerInput, { target: { value: email } })
     fireEvent.click(registerButton)
 
     expect(registerMock.callHistory.called()).to.be.true
-    await screen.findByText('Sorry, an error occured', { exact: false })
+    await screen.findByText('Sorry, an error occurred', { exact: false })
   })
 
   it('should display the success message', async function () {
@@ -40,16 +47,23 @@ describe('UserActivateRegister', function () {
       },
     }
     fetchMock.get('/user/tpds/queues', TPDS_SYNCED)
-    const registerMock = fetchMock.post('/admin/register', endPointResponse)
-    const registerInput = screen.getByLabelText('Emails to register new users')
-    const registerButton = screen.getByRole('button', { name: /register/i })
+    const registerMock = fetchMock.post(
+      '/admin/external-users',
+      endPointResponse
+    )
+    const registerInput = screen.getByLabelText(
+      'Email addresses to invite as external users'
+    )
+    const registerButton = screen.getByRole('button', {
+      name: /send activation email/i,
+    })
 
     fireEvent.change(registerInput, { target: { value: email } })
     fireEvent.click(registerButton)
 
     expect(registerMock.callHistory.called()).to.be.true
     await screen.findByText(
-      "We've sent out welcome emails to the registered users."
+      "We've sent activation emails to the external users you invited."
     )
   })
 
@@ -71,13 +85,17 @@ describe('UserActivateRegister', function () {
       },
     }
     fetchMock.get('/user/tpds/queues', TPDS_SYNCED)
-    const registerMock = fetchMock.post('/admin/register', (path, req) => {
+    const registerMock = fetchMock.post('/admin/external-users', (path, req) => {
       const body = JSON.parse(req.body)
       if (body.email === 'abc@gmail.com') return endPointResponse1
       else if (body.email === 'def@gmail.com') return endPointResponse2
     })
-    const registerInput = screen.getByLabelText('Emails to register new users')
-    const registerButton = screen.getByRole('button', { name: /register/i })
+    const registerInput = screen.getByLabelText(
+      'Email addresses to invite as external users'
+    )
+    const registerButton = screen.getByRole('button', {
+      name: /send activation email/i,
+    })
 
     fireEvent.change(registerInput, { target: { value: email } })
     fireEvent.click(registerButton)
@@ -97,13 +115,17 @@ describe('UserActivateRegister', function () {
       status: 500,
     }
     fetchMock.get('/user/tpds/queues', TPDS_SYNCED)
-    const registerMock = fetchMock.post('/admin/register', (path, req) => {
+    const registerMock = fetchMock.post('/admin/external-users', (path, req) => {
       const body = JSON.parse(req.body)
       if (body.email === 'abc@') return endPointResponse1
       else if (body.email === 'def@') return endPointResponse2
     })
-    const registerInput = screen.getByLabelText('Emails to register new users')
-    const registerButton = screen.getByRole('button', { name: /register/i })
+    const registerInput = screen.getByLabelText(
+      'Email addresses to invite as external users'
+    )
+    const registerButton = screen.getByRole('button', {
+      name: /send activation email/i,
+    })
 
     fireEvent.change(registerInput, { target: { value: email } })
     fireEvent.click(registerButton)
@@ -127,14 +149,18 @@ describe('UserActivateRegister', function () {
       status: 500,
     }
     fetchMock.get('/user/tpds/queues', TPDS_SYNCED)
-    const registerMock = fetchMock.post('/admin/register', (path, req) => {
+    const registerMock = fetchMock.post('/admin/external-users', (path, req) => {
       const body = JSON.parse(req.body)
       if (body.email === 'abc@gmail.com') return endPointResponse1
       else if (body.email === 'def@gmail.com') return endPointResponse2
       else return 500
     })
-    const registerInput = screen.getByLabelText('Emails to register new users')
-    const registerButton = screen.getByRole('button', { name: /register/i })
+    const registerInput = screen.getByLabelText(
+      'Email addresses to invite as external users'
+    )
+    const registerButton = screen.getByRole('button', {
+      name: /send activation email/i,
+    })
 
     fireEvent.change(registerInput, { target: { value: email } })
     fireEvent.click(registerButton)

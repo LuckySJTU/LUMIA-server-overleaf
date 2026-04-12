@@ -17,7 +17,7 @@ function UserActivateRegister() {
       <OLCol>
         <OLCard>
           <div className="page-header">
-            <h1>Register new users</h1>
+            <h1>Create external accounts</h1>
           </div>
           <RegisterForm
             setRegistrationSuccess={setRegistrationSuccess}
@@ -46,7 +46,7 @@ function UserActivateError({ failedEmails }) {
     <div className="row-spaced">
       <Notification
         type="error"
-        content="Sorry, an error occured, failed to register these email:"
+        content="Sorry, an error occurred while creating these external accounts:"
         className="mb-3"
       />
       <ul>
@@ -61,14 +61,14 @@ function UserActivateError({ failedEmails }) {
 function SuccessfulRegistrationMessage() {
   return (
     <div className="row-spaced text-success">
-      <p>We've sent out welcome emails to the registered users.</p>
+      <p>We've sent activation emails to the external users you invited.</p>
       <p>
-        You can also manually send them URLs below to allow them to reset their
-        password and log in for the first time.
+        You can also manually send them the activation URLs below so they can
+        set a password and log in for the first time.
       </p>
       <p>
-        (Password reset tokens will expire after one week and the user will need
-        registering again).
+        (Activation links expire after one week. After that, send a new
+        invitation.)
       </p>
     </div>
   )
@@ -80,7 +80,7 @@ function DisplayEmailsList({ emails }) {
       <tbody>
         <tr>
           <th>Email</th>
-          <th>Set Password Url</th>
+          <th>Activation URL</th>
         </tr>
         {emails.map(user => (
           <tr key={user.email}>

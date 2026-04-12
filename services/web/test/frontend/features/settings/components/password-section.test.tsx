@@ -13,6 +13,7 @@ describe('<PasswordSection />', function () {
       'ol-isExternalAuthenticationSystemUsed',
       false
     )
+    window.metaAttributesCache.set('ol-isLdapManagedUser', false)
     window.metaAttributesCache.set('ol-hasPassword', true)
   })
 
@@ -21,16 +22,26 @@ describe('<PasswordSection />', function () {
   })
 
   it('shows password managed externally message', async function () {
-    Object.assign(getMeta('ol-ExposedSettings'), {
-      isOverleaf: false,
-    })
+    window.metaAttributesCache.set('ol-isLdapManagedUser', true)
+    render(<PasswordSection />)
+
+    screen.getByText('Password settings are managed externally.')
+  })
+
+  it('allows external local accounts to change password when ldap is enabled', async function () {
     window.metaAttributesCache.set(
       'ol-isExternalAuthenticationSystemUsed',
       true
     )
+    window.metaAttributesCache.set('ol-isLdapManagedUser', false)
+
     render(<PasswordSection />)
 
-    screen.getByText('Password settings are managed externally.')
+    screen.getByLabelText('Current password')
+    screen.getByLabelText('New password')
+    screen.getByLabelText('Confirm new password')
+    expect(screen.queryByText('Password settings are managed externally.')).to
+      .be.null
   })
 
   it('shows no existing password message', async function () {

@@ -5,6 +5,7 @@ import Remove from './actions/remove'
 import useAsync from '../../../../shared/hooks/use-async'
 import { useUserEmailsContext } from '../../context/user-email-context'
 import { UserEmailData } from '../../../../../../types/user-email'
+import getMeta from '../../../../utils/meta'
 
 type ActionsProps = {
   userEmailData: UserEmailData
@@ -14,6 +15,7 @@ type ActionsProps = {
 function Actions({ userEmailData, primary }: ActionsProps) {
   const { t } = useTranslation()
   const { setLoading: setUserEmailsContextLoading } = useUserEmailsContext()
+  const isLdapManagedUser = getMeta('ol-isLdapManagedUser')
   const makePrimaryAsync = useAsync()
   const deleteEmailAsync = useAsync()
 
@@ -38,6 +40,10 @@ function Actions({ userEmailData, primary }: ActionsProps) {
       makePrimaryAsync.reset()
     }
   }, [deleteEmailAsync.isLoading, makePrimaryAsync])
+
+  if (isLdapManagedUser) {
+    return null
+  }
 
   return (
     <>

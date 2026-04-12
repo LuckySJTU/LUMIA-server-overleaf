@@ -22,6 +22,7 @@ describe('<EmailsSection />', function () {
     Object.assign(getMeta('ol-ExposedSettings'), {
       hasAffiliationsFeature: true,
     })
+    window.metaAttributesCache.set('ol-isLdapManagedUser', false)
     fetchMock.removeRoutes().clearHistory()
   })
 
@@ -43,6 +44,17 @@ describe('<EmailsSection />', function () {
     screen.getByRole('link', {
       name: /learn more about managing your Overleaf emails/i,
     })
+  })
+
+  it('renders ldap-managed note and hides add email controls', async function () {
+    window.metaAttributesCache.set('ol-isLdapManagedUser', true)
+    fetchMock.get('/user/emails?ensureAffiliation=true', [])
+
+    render(<EmailsSection />)
+
+    await screen.findByText(/ldap-managed account uses the cluster identity mapping/i)
+    expect(screen.queryByRole('button', { name: /add another email/i })).to.be
+      .null
   })
 
   it('renders a loading message when loading', async function () {

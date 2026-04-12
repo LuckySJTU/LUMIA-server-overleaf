@@ -24,6 +24,7 @@ function EmailsSectionContent() {
 
   // Only show the "add email" button if the user has permission to add a secondary email
   const hideAddSecondaryEmail = getMeta('ol-cannot-add-secondary-email')
+  const isLdapManagedUser = getMeta('ol-isLdapManagedUser')
 
   // Sort emails: primary first, then confirmed secondary emails, then unconfirmed secondary emails
   const sortedUserEmails = [...userEmails].sort((a, b) => {
@@ -43,20 +44,30 @@ function EmailsSectionContent() {
     <>
       <h2 className="h3">{t('emails_and_affiliations_title')}</h2>
       <p className="small">{t('emails_and_affiliations_explanation')}</p>
-      <p className="small">
-        <Trans
-          i18nKey="change_primary_email_address_instructions"
-          components={[
-            // eslint-disable-next-line react/jsx-key
-            <strong />,
-            // eslint-disable-next-line jsx-a11y/anchor-has-content, react/jsx-key
-            <a
-              href="/learn/how-to/Managing_your_Overleaf_emails"
-              target="_blank"
-            />,
-          ]}
-        />
-      </p>
+      {!isLdapManagedUser && (
+        <p className="small">
+          <Trans
+            i18nKey="change_primary_email_address_instructions"
+            components={[
+              // eslint-disable-next-line react/jsx-key
+              <strong />,
+              // eslint-disable-next-line jsx-a11y/anchor-has-content, react/jsx-key
+              <a
+                href="/learn/how-to/Managing_your_Overleaf_emails"
+                target="_blank"
+              />,
+            ]}
+          />
+        </p>
+      )}
+      {isLdapManagedUser && (
+        <p className="small text-muted">
+          This LDAP-managed account uses the cluster identity mapping for sign
+          in. Email addresses can be viewed here, but must be changed by an
+          administrator through the LDAP provisioning flow instead of the
+          account settings page.
+        </p>
+      )}
       <>
         <EmailsHeader />
         {isInitializing ? (
@@ -75,7 +86,9 @@ function EmailsSectionContent() {
             ))}
           </>
         )}
-        {isInitializingSuccess && !hideAddSecondaryEmail && <AddEmail />}
+        {isInitializingSuccess &&
+          !hideAddSecondaryEmail &&
+          !isLdapManagedUser && <AddEmail />}
         {isInitializingError && (
           <OLNotification
             type="error"

@@ -20,6 +20,7 @@ import { RateLimiter } from '../../infrastructure/RateLimiter.mjs'
 import Features from '../../infrastructure/Features.mjs'
 import tsscmp from 'tsscmp'
 import Modules from '../../infrastructure/Modules.mjs'
+import LdapManagedUserHelper from './LdapManagedUserHelper.mjs'
 
 const AUDIT_LOG_TOKEN_PREFIX_LENGTH = 10
 
@@ -42,6 +43,28 @@ const resendConfirmCodeRateLimiter = new RateLimiter(
   }
 )
 
+async function _denyLdapManagedEmailChanges(req, res, { redirectTo } = {}) {
+  const userId = SessionManager.getLoggedInUserId(req.session)
+  const user = await UserGetter.promises.getUser(userId, { email: 1 })
+
+  if (!LdapManagedUserHelper.isLdapManagedUser(user, req)) {
+    return false
+  }
+
+  if (redirectTo) {
+    res.redirect(redirectTo)
+    return true
+  }
+
+  res.status(403).json({
+    message: {
+      type: 'error',
+      text: 'LDAP-managed accounts cannot change email addresses in account settings.',
+    },
+  })
+  return true
+}
+
 async function _sendSecurityAlertEmail(user, email) {
   const emailOptions = {
     to: user.email,
@@ -55,6 +78,10 @@ async function _sendSecurityAlertEmail(user, email) {
 }
 
 async function sendExistingEmailConfirmationCode(req, res) {
+  if (await _denyLdapManagedEmailChanges(req, res)) {
+    return
+  }
+
   const userId = SessionManager.getLoggedInUserId(req.session)
   const email = EmailHelper.parseEmail(req.body.email)
   if (!email) {
@@ -75,6 +102,10 @@ async function sendExistingEmailConfirmationCode(req, res) {
  * This method is for adding a secondary email to be confirmed via a code.
  */
 async function addWithConfirmationCode(req, res) {
+  if (await _denyLdapManagedEmailChanges(req, res)) {
+    return
+  }
+
   delete req.session.pendingSecondaryEmail
 
   const userId = SessionManager.getLoggedInUserId(req.session)
@@ -182,6 +213,10 @@ async function sendCodeAndStoreInSession(
  */
 const _checkConfirmationCode =
   (sessionKey, beforeConfirmEmail) => async (req, res) => {
+    if (await _denyLdapManagedEmailChanges(req, res)) {
+      return
+    }
+
     const userId = SessionManager.getLoggedInUserId(req.session)
     const code = req.body.code
     const user = await UserGetter.promises.getUser(userId, {
@@ -329,6 +364,10 @@ const checkExistingEmailConfirmationCode = _checkConfirmationCode(
 
 const _resendConfirmationCode =
   (sessionKey, operation, auditLogEmailKey) => async (req, res) => {
+    if (await _denyLdapManagedEmailChanges(req, res)) {
+      return
+    }
+
     const sessionData = req.session[sessionKey]
     if (!sessionData) {
       logger.err({}, `error resending confirmation code. missing ${sessionKey}`)
@@ -391,6 +430,10 @@ const resendExistingSecondaryEmailConfirmationCode = _resendConfirmationCode(
 )
 
 async function confirmSecondaryEmailPage(req, res) {
+  if (await _denyLdapManagedEmailChanges(req, res, { redirectTo: '/user/settings' })) {
+    return
+  }
+
   const userId = SessionManager.getLoggedInUserId(req.session)
 
   if (!req.session.pendingSecondaryEmail) {
@@ -410,6 +453,10 @@ async function confirmSecondaryEmailPage(req, res) {
 }
 
 async function addSecondaryEmailPage(req, res) {
+  if (await _denyLdapManagedEmailChanges(req, res, { redirectTo: '/user/settings' })) {
+    return
+  }
+
   const userId = SessionManager.getLoggedInUserId(req.session)
 
   const confirmedEmails =
@@ -495,6 +542,10 @@ async function showConfirm(req, res, next) {
 }
 
 async function remove(req, res) {
+  if (await _denyLdapManagedEmailChanges(req, res)) {
+    return
+  }
+
   const userId = SessionManager.getLoggedInUserId(req.session)
   const email = EmailHelper.parseEmail(req.body.email)
   if (!email) {
@@ -509,6 +560,10 @@ async function remove(req, res) {
 }
 
 async function setDefault(req, res, next) {
+  if (await _denyLdapManagedEmailChanges(req, res)) {
+    return
+  }
+
   const userId = SessionManager.getLoggedInUserId(req.session)
   const email = EmailHelper.parseEmail(req.body.email)
 

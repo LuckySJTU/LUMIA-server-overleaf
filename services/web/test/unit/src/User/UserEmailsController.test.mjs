@@ -56,7 +56,15 @@ describe('UserEmailsController', function () {
         setDefaultEmailAddress: vi.fn().mockResolvedValue(undefined),
       },
     }
-    ctx.EmailHelper = { parseEmail: vi.fn() }
+    ctx.EmailHelper = {
+      parseEmail: vi.fn(),
+      getDomain: vi.fn(email => email?.split('@').pop()?.toLowerCase() || null),
+    }
+    ctx.Settings = {
+      ldap: {
+        enable: false,
+      },
+    }
     ctx.endorseAffiliation = vi.fn((userId, email, role, dept, callback) =>
       callback()
     )
@@ -127,6 +135,10 @@ describe('UserEmailsController', function () {
 
     vi.doMock('../../../../app/src/Features/Helpers/EmailHelper', () => ({
       default: ctx.EmailHelper,
+    }))
+
+    vi.doMock('@overleaf/settings', () => ({
+      default: ctx.Settings,
     }))
 
     vi.doMock(
@@ -261,6 +273,31 @@ describe('UserEmailsController', function () {
           }
         },
       })
+    })
+
+    it('rejects ldap-managed users', async function (ctx) {
+      expect.assertions(3)
+      ctx.user.email = 'external-user@example.com'
+      ctx.req.session.authProvider = 'ldap'
+      ctx.Settings.ldap = {
+        enable: true,
+        overleafEmailDomain: 'lumia.cn',
+      }
+
+      await ctx.UserEmailsController.addWithConfirmationCode(ctx.req, {
+        status: code => {
+          expect(code).to.equal(403)
+          return {
+            json: body => {
+              expect(body.message.text).to.match(/ldap-managed accounts/i)
+            },
+          }
+        },
+      })
+
+      expect(
+        ctx.UserEmailsConfirmationHandler.promises.sendConfirmationCode
+      ).not.toHaveBeenCalled()
     })
   })
 
@@ -452,6 +489,29 @@ describe('UserEmailsController', function () {
         },
       })
     })
+
+    it('rejects ldap-managed users', async function (ctx) {
+      expect.assertions(3)
+      ctx.user.email = 'external-user@example.com'
+      ctx.req.session.authProvider = 'ldap'
+      ctx.Settings.ldap = {
+        enable: true,
+        overleafEmailDomain: 'lumia.cn',
+      }
+
+      await ctx.UserEmailsController.remove(ctx.req, {
+        status: code => {
+          expect(code).to.equal(403)
+          return {
+            json: body => {
+              expect(body.message.text).to.match(/ldap-managed accounts/i)
+            },
+          }
+        },
+      })
+
+      expect(ctx.UserUpdater.promises.removeEmailAddress).not.toHaveBeenCalled()
+    })
   })
 
   describe('setDefault', function () {
@@ -570,6 +630,31 @@ describe('UserEmailsController', function () {
         expect.objectContaining({ err: redisError }),
         'failed revoking secondary sessions after changing default email'
       )
+    })
+
+    it('rejects ldap-managed users', async function (ctx) {
+      expect.assertions(3)
+      ctx.user.email = 'external-user@example.com'
+      ctx.req.session.authProvider = 'ldap'
+      ctx.Settings.ldap = {
+        enable: true,
+        overleafEmailDomain: 'lumia.cn',
+      }
+
+      await ctx.UserEmailsController.setDefault(ctx.req, {
+        status: code => {
+          expect(code).to.equal(403)
+          return {
+            json: body => {
+              expect(body.message.text).to.match(/ldap-managed accounts/i)
+            },
+          }
+        },
+      })
+
+      expect(
+        ctx.UserUpdater.promises.setDefaultEmailAddress
+      ).not.toHaveBeenCalled()
     })
   })
 

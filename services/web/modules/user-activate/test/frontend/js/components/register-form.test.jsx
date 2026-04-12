@@ -25,8 +25,8 @@ describe('RegisterForm', function () {
         setFailedEmails={setFailedEmailsStub}
       />
     )
-    await screen.findByLabelText('Emails to register new users')
-    screen.getByRole('button', { name: /register/i })
+    await screen.findByLabelText('Email addresses to invite as external users')
+    screen.getByRole('button', { name: /send activation email/i })
   })
 
   it('should call the fetch request when register button is pressed', async function () {
@@ -43,7 +43,10 @@ describe('RegisterForm', function () {
         setNewPasswordUrl: 'SetNewPasswordURL',
       },
     }
-    const registerMock = fetchMock.post('/admin/register', endPointResponse)
+    const registerMock = fetchMock.post(
+      '/admin/external-users',
+      endPointResponse
+    )
 
     render(
       <RegisterForm
@@ -53,8 +56,12 @@ describe('RegisterForm', function () {
         setFailedEmails={setFailedEmailsStub}
       />
     )
-    const registerInput = screen.getByLabelText('Emails to register new users')
-    const registerButton = screen.getByRole('button', { name: /register/i })
+    const registerInput = screen.getByLabelText(
+      'Email addresses to invite as external users'
+    )
+    const registerButton = screen.getByRole('button', {
+      name: /send activation email/i,
+    })
     fireEvent.change(registerInput, { target: { value: email } })
     fireEvent.click(registerButton)
     expect(registerMock.callHistory.called()).to.be.true

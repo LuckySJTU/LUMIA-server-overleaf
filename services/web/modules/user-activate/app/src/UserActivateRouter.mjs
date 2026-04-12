@@ -10,11 +10,22 @@ export default {
     webRouter.get(
       '/admin/user',
       AuthorizationMiddleware.ensureUserIsSiteAdmin,
-      (req, res) => res.redirect('/admin/register')
+      (req, res) => res.redirect('/admin/external-users')
     )
 
     webRouter.get('/user/activate', UserActivateController.activateAccountPage)
     AuthenticationController.addEndpointToLoginWhitelist('/user/activate')
+
+    webRouter.get(
+      '/admin/external-users',
+      AuthorizationMiddleware.ensureUserIsSiteAdmin,
+      UserActivateController.registerNewUser
+    )
+    webRouter.post(
+      '/admin/external-users',
+      AuthorizationMiddleware.ensureUserIsSiteAdmin,
+      UserActivateController.register
+    )
 
     webRouter.get(
       '/admin/register',

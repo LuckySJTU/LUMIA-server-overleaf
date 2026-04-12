@@ -230,13 +230,23 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
 
   webRouter.get('/login', UserPagesController.loginPage)
   AuthenticationController.addEndpointToLoginWhitelist('/login')
+  webRouter.get('/login/external', UserPagesController.externalLoginPage)
+  AuthenticationController.addEndpointToLoginWhitelist('/login/external')
 
   webRouter.post(
     '/login',
     RateLimiterMiddleware.rateLimit(overleafLoginRateLimiter), // rate limit IP (20 / 60s)
     RateLimiterMiddleware.loginRateLimitEmail(
-      AuthenticationController.getLoginIdentifierField()
+      req => AuthenticationController.getLoginIdentifierField(req)
     ), // rate limit login identifier (10 / 120s)
+    CaptchaMiddleware.validateCaptcha('login'),
+    AuthenticationController.passportLogin
+  )
+
+  webRouter.post(
+    '/login/external',
+    RateLimiterMiddleware.rateLimit(overleafLoginRateLimiter), // rate limit IP (20 / 60s)
+    RateLimiterMiddleware.loginRateLimitEmail('email'),
     CaptchaMiddleware.validateCaptcha('login'),
     AuthenticationController.passportLogin
   )
@@ -262,7 +272,7 @@ async function initialize(webRouter, privateApiRouter, publicApiRouter) {
       '/login/legacy',
       RateLimiterMiddleware.rateLimit(overleafLoginRateLimiter), // rate limit IP (20 / 60s)
       RateLimiterMiddleware.loginRateLimitEmail(
-        AuthenticationController.getLoginIdentifierField()
+        req => AuthenticationController.getLoginIdentifierField(req)
       ), // rate limit login identifier (10 / 120s)
       CaptchaMiddleware.validateCaptcha('login'),
       AuthenticationController.passportLogin

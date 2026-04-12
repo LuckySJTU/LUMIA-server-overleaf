@@ -37,6 +37,7 @@ describe('email actions - make primary', function () {
     Object.assign(getMeta('ol-ExposedSettings'), {
       hasAffiliationsFeature: true,
     })
+    window.metaAttributesCache.set('ol-isLdapManagedUser', false)
     fetchMock.removeRoutes().clearHistory()
   })
 
@@ -45,6 +46,17 @@ describe('email actions - make primary', function () {
   })
 
   describe('disabled `make primary` button', function () {
+    it('does not render actions for ldap-managed users', async function () {
+      window.metaAttributesCache.set('ol-isLdapManagedUser', true)
+      fetchMock.get('/user/emails?ensureAffiliation=true', [userEmailData])
+      render(<EmailsSection />)
+
+      await screen.findByText(userEmailData.email)
+      expect(screen.queryByRole('button', { name: /make primary/i })).to.be
+        .null
+      expect(screen.queryByRole('button', { name: /remove/i })).to.be.null
+    })
+
     it('when renders with unconfirmed email', async function () {
       const userEmailDataCopy = { ...userEmailData2 }
       const { confirmedAt: _, ...userEmailData } = userEmailDataCopy

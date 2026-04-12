@@ -12,6 +12,80 @@ import { expressify } from '@overleaf/promise-utils'
 import Features from '../../infrastructure/Features.mjs'
 import Modules from '../../infrastructure/Modules.mjs'
 import SplitTestHandler from '../SplitTests/SplitTestHandler.mjs'
+import LdapManagedUserHelper from './LdapManagedUserHelper.mjs'
+
+function renderLoginPage(req, res, { strategy = 'local' } = {}) {
+  // if user is being sent to /login with explicit redirect (redir=/foo),
+  // such as being sent from the editor to /login, then set the redirect explicitly
+  if (
+    req.query.redir != null &&
+    AuthenticationController.getRedirectFromSession(req) == null
+  ) {
+    AuthenticationController.setRedirectInSession(req, req.query.redir)
+  }
+
+  const metadata = { robotsNoindexNofollow: false }
+  if (Object.keys(req.query).length !== 0) {
+    metadata.robotsNoindexNofollow = true
+  }
+
+  const ldapLogin = Boolean(Settings.ldap?.enable)
+  const isChinese = req.i18n.language?.toLowerCase().startsWith('zh')
+  const ldapLabel = Settings.ldap?.loginLabel || 'LDAP'
+  const selectedStrategy = ldapLogin ? strategy : 'local'
+  const query = new URLSearchParams()
+
+  if (req.query.redir) {
+    query.set('redir', req.query.redir)
+  }
+
+  const querySuffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  let loginHeading
+  let loginHint
+
+  if (selectedStrategy === 'ldap') {
+    loginHeading =
+      Settings.nav?.login_support_title ||
+      (isChinese ? `${ldapLabel} 登录` : `Log in ${ldapLabel}`)
+  } else if (ldapLogin) {
+    loginHeading = isChinese ? '外部账号登录' : 'External account login'
+    loginHint = isChinese
+      ? '使用激活邮件中设置的邮箱和密码登录。'
+      : 'Use the email address and password set from your activation email.'
+  } else {
+    loginHeading = req.i18n.translate('log_in')
+  }
+
+  res.render('user/login', {
+    title: loginHeading,
+    login_heading: loginHeading,
+    login_hint: loginHint,
+    login_support_title: Settings.nav?.login_support_title,
+    login_support_text: Settings.nav?.login_support_text,
+    ldapLogin,
+    showLoginSwitcher: ldapLogin,
+    selectedLoginStrategy: selectedStrategy,
+    ldapLoginLabel: ldapLabel,
+    externalLoginLabel: isChinese ? '外部账号' : 'External account',
+    ldapLoginHref: `/login${querySuffix}`,
+    externalLoginHref: `/login/external${querySuffix}`,
+    loginAction:
+      selectedStrategy === 'ldap' ? '/login' : '/login/external',
+    loginFieldName: selectedStrategy === 'ldap' ? 'username' : 'email',
+    loginFieldLabel:
+      selectedStrategy === 'ldap'
+        ? isChinese
+          ? '用户名'
+          : 'Username'
+        : req.i18n.translate('email'),
+    loginFieldType: selectedStrategy === 'ldap' ? 'text' : 'email',
+    loginFieldAutocomplete:
+      selectedStrategy === 'ldap' ? 'username' : 'email',
+    showPasswordReset: selectedStrategy !== 'ldap',
+    metadata,
+  })
+}
 
 async function settingsPage(req, res) {
   const userId = SessionManager.getLoggedInUserId(req.session)
@@ -167,6 +241,7 @@ async function settingsPage(req, res) {
     projectSyncSuccessMessage,
     personalAccessTokens,
     emailAddressLimit: Settings.emailAddressLimit,
+    isLdapManagedUser: LdapManagedUserHelper.isLdapManagedUser(user, req),
     isManagedAccount: !!req.managedBy,
     userRestrictions: Array.from(req.userRestrictions || []),
     currentManagedUserAdminEmail,
@@ -256,45 +331,19 @@ const UserPagesController = {
   },
 
   loginPage(req, res) {
-    // if user is being sent to /login with explicit redirect (redir=/foo),
-    // such as being sent from the editor to /login, then set the redirect explicitly
-    if (
-      req.query.redir != null &&
-      AuthenticationController.getRedirectFromSession(req) == null
-    ) {
-      AuthenticationController.setRedirectInSession(req, req.query.redir)
-    }
-    const metadata = { robotsNoindexNofollow: false }
-    if (Object.keys(req.query).length !== 0) {
-      metadata.robotsNoindexNofollow = true
-    }
-    const ldapLogin = Boolean(Settings.ldap?.enable)
-    const isChinese = req.i18n.language?.toLowerCase().startsWith('zh')
-    const ldapLabel = Settings.ldap?.loginLabel || 'LDAP'
-    const loginHeading =
-      Settings.nav?.login_support_title ||
-      (ldapLogin
-        ? isChinese
-          ? `${ldapLabel} 登录`
-          : `Log in ${ldapLabel}`
-        : req.i18n.translate('log_in'))
-
-    res.render('user/login', {
-      title: loginHeading,
-      login_heading: loginHeading,
-      login_support_title: Settings.nav?.login_support_title,
-      login_support_text: Settings.nav?.login_support_text,
-      ldapLogin,
-      loginFieldName: ldapLogin ? 'username' : 'email',
-      loginFieldLabel: ldapLogin
-        ? isChinese
-          ? '用户名'
-          : 'Username'
-        : req.i18n.translate('email'),
-      loginFieldType: ldapLogin ? 'text' : 'email',
-      showPasswordReset: !ldapLogin,
-      metadata,
+    renderLoginPage(req, res, {
+      strategy: AuthenticationController.usesLdapAuthentication()
+        ? 'ldap'
+        : 'local',
     })
+  },
+
+  externalLoginPage(req, res) {
+    if (!AuthenticationController.usesLdapAuthentication()) {
+      return res.redirect('/login')
+    }
+
+    renderLoginPage(req, res, { strategy: 'local' })
   },
 
   /**

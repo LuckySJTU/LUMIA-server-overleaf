@@ -51,13 +51,10 @@ function CanOnlyLogInThroughSSO() {
 
 function PasswordInnerSection() {
   const { t } = useTranslation()
-  const { isOverleaf } = getMeta('ol-ExposedSettings')
-  const isExternalAuthenticationSystemUsed = getMeta(
-    'ol-isExternalAuthenticationSystemUsed'
-  )
   const hasPassword = getMeta('ol-hasPassword')
+  const isLdapManagedUser = getMeta('ol-isLdapManagedUser')
 
-  if (isExternalAuthenticationSystemUsed && !isOverleaf) {
+  if (isLdapManagedUser) {
     return <p>{t('password_managed_externally')}</p>
   }
 

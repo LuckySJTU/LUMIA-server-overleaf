@@ -84,6 +84,7 @@ describe('<EmailsSection />', function () {
       hasSamlFeature: true,
       samlInitPath: 'saml/init',
     })
+    window.metaAttributesCache.set('ol-isLdapManagedUser', false)
     fetchMock.removeRoutes().clearHistory()
   })
 

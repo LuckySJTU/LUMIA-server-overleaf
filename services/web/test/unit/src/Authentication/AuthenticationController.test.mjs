@@ -321,6 +321,46 @@ describe('AuthenticationController', function () {
       ctx.passport.authenticate.callCount.should.equal(1)
     })
 
+    it('should use ldap by default when ldap is enabled', function (ctx) {
+      ctx.Settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+      ctx.req.body = {}
+
+      ctx.AuthenticationController.passportLogin(ctx.req, ctx.res, ctx.next)
+
+      ctx.passport.authenticate.should.have.been.calledWith(
+        'ldap',
+        sinon.match.object,
+        sinon.match.func
+      )
+    })
+
+    it('should use local login when external login is selected', function (ctx) {
+      ctx.Settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+      ctx.req.body = { login_strategy: 'local' }
+
+      ctx.AuthenticationController.passportLogin(ctx.req, ctx.res, ctx.next)
+
+      ctx.passport.authenticate.should.have.been.calledWith(
+        'local',
+        sinon.match.object,
+        sinon.match.func
+      )
+    })
+
+    it('should force local login on the external login route', function (ctx) {
+      ctx.Settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+      ctx.req.path = '/login/external'
+      ctx.req.body = {}
+
+      ctx.AuthenticationController.passportLogin(ctx.req, ctx.res, ctx.next)
+
+      ctx.passport.authenticate.should.have.been.calledWith(
+        'local',
+        sinon.match.object,
+        sinon.match.func
+      )
+    })
+
     describe('when authenticate produces an error', function () {
       beforeEach(function (ctx) {
         ctx.passport.authenticate.yields(ctx.err)
@@ -612,6 +652,36 @@ describe('AuthenticationController', function () {
           'failed log in'
         )
       })
+    })
+  })
+
+  describe('getLoginIdentifierField', function () {
+    it('should use username for ldap logins', function (ctx) {
+      ctx.Settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+      ctx.req.body = {}
+
+      expect(
+        ctx.AuthenticationController.getLoginIdentifierField(ctx.req)
+      ).to.equal('username')
+    })
+
+    it('should use email for external logins', function (ctx) {
+      ctx.Settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+      ctx.req.body = { login_strategy: 'local' }
+
+      expect(
+        ctx.AuthenticationController.getLoginIdentifierField(ctx.req)
+      ).to.equal('email')
+    })
+
+    it('should use email on the external login route', function (ctx) {
+      ctx.Settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+      ctx.req.path = '/login/external'
+      ctx.req.body = {}
+
+      expect(
+        ctx.AuthenticationController.getLoginIdentifierField(ctx.req)
+      ).to.equal('email')
     })
   })
 

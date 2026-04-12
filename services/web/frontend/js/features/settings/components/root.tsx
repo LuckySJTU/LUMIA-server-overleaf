@@ -6,6 +6,7 @@ import EmailsSection from './emails-section'
 import AccountInfoSection from './account-info-section'
 import ManagedAccountAlert from './managed-account-alert'
 import PasswordSection from './password-section'
+import ExternalAccountSection from './external-account-section'
 import LinkingSection from './linking-section'
 import BetaProgramSection from './beta-program-section'
 import LabsProgramSection from './labs-program-section'
@@ -65,6 +66,7 @@ function SettingsPageContent() {
               <PasswordSection />
             </OLCol>
           </OLRow>
+          <ExternalAccountSection />
           <hr />
           <SecuritySection />
           <SSOProvider>

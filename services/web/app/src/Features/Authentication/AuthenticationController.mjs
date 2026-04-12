@@ -100,22 +100,30 @@ const AuthenticationController = {
     return Boolean(Settings.ldap?.enable)
   },
 
-  getLoginIdentifierField() {
-    return AuthenticationController.usesLdapAuthentication()
+  getLoginStrategy(req) {
+    if (!AuthenticationController.usesLdapAuthentication()) {
+      return 'local'
+    }
+
+    if (req?.path === '/login/external' || req?.route?.path === '/login/external') {
+      return 'local'
+    }
+
+    return req?.body?.login_strategy === 'local' ? 'local' : 'ldap'
+  },
+
+  getLoginIdentifierField(req) {
+    return AuthenticationController.getLoginStrategy(req) === 'ldap'
       ? 'username'
       : 'email'
   },
 
   getLoginIdentifier(req) {
-    return req.body?.[AuthenticationController.getLoginIdentifierField()]
+    return req.body?.[AuthenticationController.getLoginIdentifierField(req)]
   },
 
-  getLoginStrategy() {
-    return AuthenticationController.usesLdapAuthentication() ? 'ldap' : 'local'
-  },
-
-  getLoginMethodName() {
-    if (!AuthenticationController.usesLdapAuthentication()) {
+  getLoginMethodName(req) {
+    if (AuthenticationController.getLoginStrategy(req) !== 'ldap') {
       return 'Password login'
     }
     return `${Settings.ldap?.loginLabel || 'LDAP'} login`
@@ -143,7 +151,7 @@ const AuthenticationController = {
     // This function is middleware which wraps the passport.authenticate middleware,
     // so we can send back our custom `{message: {text: "", type: ""}}` responses on failure,
     // and send a `{redir: ""}` response on success
-    const strategy = AuthenticationController.getLoginStrategy()
+    const strategy = AuthenticationController.getLoginStrategy(req)
     passport.authenticate(
       strategy,
       { keepSessionInfo: true },
@@ -154,7 +162,7 @@ const AuthenticationController = {
         if (user) {
           // `user` is either a user object or false
           AuthenticationController.setAuditInfo(req, {
-            method: AuthenticationController.getLoginMethodName(),
+            method: AuthenticationController.getLoginMethodName(req),
           })
           if (strategy === 'ldap') {
             req.user_info = { ...(req.user_info || {}), auth_provider: 'ldap' }
@@ -293,14 +301,14 @@ const AuthenticationController = {
       }
     }
     AuthenticationController.setAuditInfo(req, {
-      method: AuthenticationController.getLoginMethodName(),
+      method: AuthenticationController.getLoginMethodName(req),
     })
 
     const { fromKnownDevice } = AuthenticationController.getAuditInfo(req)
     const auditLog = {
       ipAddress: req.ip,
       info: {
-        method: AuthenticationController.getLoginMethodName(),
+        method: AuthenticationController.getLoginMethodName(req),
         fromKnownDevice,
       },
     }
@@ -719,6 +727,7 @@ function _loginAsyncHandlers(req, user, anonymousAnalyticsId, isNewUser) {
   )
 
   req.session.justLoggedIn = true
+  req.session.authProvider = req.user_info?.auth_provider || 'email-password'
   // capture the request ip for use when creating the session
   return (user._login_req_ip = req.ip)
 }

@@ -10,8 +10,16 @@ block content
 				.col-lg-6.offset-lg-3.col-xl-4.offset-xl-4
 					.page-header
 						h1 !{login_heading}
-					form(name='loginForm' data-ol-async-form action='/login' method='POST')
+						if login_hint
+							p.text-muted.mb-0 !{login_hint}
+					if showLoginSwitcher
+						.d-flex.justify-content-center.mb-4.gap-2
+							a.btn.btn-ds(class=selectedLoginStrategy === 'ldap' ? 'btn-primary' : 'btn-secondary', href=ldapLoginHref) #{ldapLoginLabel}
+							a.btn.btn-ds(class=selectedLoginStrategy === 'local' ? 'btn-primary' : 'btn-secondary', href=externalLoginHref) #{externalLoginLabel}
+					form(name='loginForm' data-ol-async-form action=loginAction method='POST')
 						input(name='_csrf' type='hidden' value=csrfToken)
+						if selectedLoginStrategy
+							input(name='login_strategy' type='hidden' value=selectedLoginStrategy)
 						+formMessagesNewStyle
 						if showPasswordReset
 							+customFormMessageNewStyle('invalid-password-retry-or-reset', 'danger')
@@ -28,7 +36,7 @@ block content
 								type=loginFieldType
 								required
 								autofocus='true'
-								autocomplete='username'
+								autocomplete=loginFieldAutocomplete
 							)
 						.form-group
 							label(for='password') #{translate("password")}

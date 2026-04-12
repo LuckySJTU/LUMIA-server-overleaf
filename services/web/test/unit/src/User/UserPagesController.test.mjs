@@ -239,6 +239,70 @@ describe('UserPagesController', function () {
       })
     })
 
+    it('should render the default local login form when ldap is disabled', async function (ctx) {
+      await new Promise((resolve, reject) => {
+        ctx.res.callback = () => {
+          expect(ctx.res.renderedVariables.selectedLoginStrategy).to.equal(
+            'local'
+          )
+          expect(ctx.res.renderedVariables.loginAction).to.equal('/login')
+          expect(ctx.res.renderedVariables.showLoginSwitcher).to.equal(false)
+          resolve()
+        }
+        ctx.UserPagesController.loginPage(
+          ctx.req,
+          ctx.res,
+          ctx.rejectOnError(reject)
+        )
+      })
+    })
+
+    it('should render the ldap login form when ldap is enabled', async function (ctx) {
+      ctx.settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+
+      await new Promise((resolve, reject) => {
+        ctx.res.callback = () => {
+          expect(ctx.res.renderedVariables.selectedLoginStrategy).to.equal(
+            'ldap'
+          )
+          expect(ctx.res.renderedVariables.loginAction).to.equal('/login')
+          expect(ctx.res.renderedVariables.showPasswordReset).to.equal(false)
+          expect(ctx.res.renderedVariables.showLoginSwitcher).to.equal(true)
+          expect(ctx.res.renderedVariables.externalLoginHref).to.equal(
+            '/login/external'
+          )
+          resolve()
+        }
+        ctx.UserPagesController.loginPage(
+          ctx.req,
+          ctx.res,
+          ctx.rejectOnError(reject)
+        )
+      })
+    })
+
+    it('should render the external login form when requested', async function (ctx) {
+      ctx.settings.ldap = { enable: true, loginLabel: 'LUMIA LDAP' }
+
+      await new Promise((resolve, reject) => {
+        ctx.res.callback = () => {
+          expect(ctx.res.renderedVariables.selectedLoginStrategy).to.equal(
+            'local'
+          )
+          expect(ctx.res.renderedVariables.loginAction).to.equal(
+            '/login/external'
+          )
+          expect(ctx.res.renderedVariables.showPasswordReset).to.equal(true)
+          resolve()
+        }
+        ctx.UserPagesController.externalLoginPage(
+          ctx.req,
+          ctx.res,
+          ctx.rejectOnError(reject)
+        )
+      })
+    })
+
     describe('when an explicit redirect is set via query string', function () {
       beforeEach(function (ctx) {
         ctx.AuthenticationController.getRedirectFromSession = sinon

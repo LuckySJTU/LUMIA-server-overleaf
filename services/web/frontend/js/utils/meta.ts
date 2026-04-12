@@ -181,6 +181,7 @@ export interface Meta {
   'ol-inviterName': string
   'ol-isCollectionMethodManual': boolean
   'ol-isExternalAuthenticationSystemUsed': boolean
+  'ol-isLdapManagedUser': boolean
   'ol-isManagedAccount': boolean
   'ol-isProfessional': boolean
   'ol-isRegisteredViaGoogle': boolean

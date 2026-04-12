@@ -53,7 +53,7 @@ function RegisterForm({
 
   function registerUser(email) {
     const options = { email }
-    const url = `/admin/register`
+    const url = `/admin/external-users`
     return postJSON(url, { body: options })
   }
 
@@ -62,7 +62,7 @@ function RegisterForm({
       <OLRow>
         <OLCol lg={8}>
           <OLFormLabel htmlFor="register-new-user-email">
-            Emails to register new users
+            Email addresses to invite as external users
           </OLFormLabel>
           <OLFormControl
             id="register-new-user-email"
@@ -71,7 +71,8 @@ function RegisterForm({
             aria-describedby="register-new-user-email-helper"
           />
           <OLFormText id="register-new-user-email-helper">
-            {t('add_comma_separated_emails_help')}
+            Enter one or more email addresses. Each user will receive an
+            activation email to set their password.
           </OLFormText>
         </OLCol>
         <OLCol
@@ -83,7 +84,7 @@ function RegisterForm({
             isLoading={isLoading}
             loadingLabel={t('registering')}
           >
-            Register
+            Send activation email
           </OLButton>
         </OLCol>
       </OLRow>

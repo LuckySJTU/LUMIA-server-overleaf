@@ -17,20 +17,25 @@
    - `OVERLEAF_SESSION_SECRET`
    - `WEB_API_PASSWORD`
    - `OVERLEAF_LDAP_BIND_CREDENTIALS`
-3. Review the LDAP search filter.
+3. Configure email delivery before you rely on invitations, password resets, or account activation.
+   - Copy the SMTP host/port/auth/TLS settings from `/etc/slurm-mail/slurm-mail.conf` into the `OVERLEAF_EMAIL_*` variables in `deploy/overleaf.lumia.env`.
+   - On Lumia that file is owned by `root`, so you need sudo/root access to read it.
+   - Keep `OVERLEAF_APP_NAME=LUMIA Overleaf`.
+   - Set `OVERLEAF_EMAIL_FROM_ADDRESS` to a branded sender such as `"LUMIA Overleaf <noreply@your-domain>"`.
+4. Review the LDAP search filter.
    - This setup assumes Lumia LDAP users log in with `uid`, so the default filter is `(uid={{username}})`.
-4. Keep `OVERLEAF_LDAP_OVERLEAF_EMAIL_DOMAIN=lumia.cn` unless you want a different local Overleaf email suffix.
-5. If you plan to publish the service on the public Internet behind HTTPS, keep:
+5. Keep `OVERLEAF_LDAP_OVERLEAF_EMAIL_DOMAIN=lumia.cn` unless you want a different local Overleaf email suffix.
+6. If you plan to publish the service on the public Internet behind HTTPS, keep:
    - `OVERLEAF_HTTP_BIND_IP=127.0.0.1`
    - `OVERLEAF_SITE_URL=https://your-domain`
    - `OVERLEAF_SECURE_COOKIE=true`
-6. Keep `OVERLEAF_MONGO_IMAGE=mongo:8.0`.
+7. Keep `OVERLEAF_MONGO_IMAGE=mongo:8.0`.
    - Current Overleaf startup checks require MongoDB 8.0 or newer.
-7. `OVERLEAF_TEXLIVE_SCHEME` controls the base TeX Live scheme installed by `install-tl`.
+8. `OVERLEAF_TEXLIVE_SCHEME` controls the base TeX Live scheme installed by `install-tl`.
    - Default is `scheme-medium`.
    - The official TeX Live guide describes `medium` as `small + more packages and languages`, while `small` already includes `basic + xetex, metapost, a few languages`.
    - This is more stable than starting from `scheme-basic` and then asking `tlmgr` to install many large collections in one step.
-8. `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` controls extra LaTeX packages installed after the base scheme.
+9. `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` controls extra LaTeX packages installed after the base scheme.
    - Default is `"collection-langcjk microtype tools caption booktabs multirow cleveref mathtools todonotes xcolor hyperref enumitem algorithms algorithmicx natbib url xurl units wrapfig float sttools adjustbox threeparttable tablefootnote soul ulem listings pgf pgfplots siunitx makecell preprint forloop xifthen ifmtarg cmap psnfss textcase changepage datetime fmtcount fancyhdr lastpage titlesec needspace kvoptions tcolorbox fontawesome5 xcharter fontaxes mweights newtx zlmtt extsizes geometry colortbl forest elocalloc changes xstring truncate bclogo mdframed zref lipsum tocloft bbding epigraph nextpage minitoc textgreek cjk greek-fontenc cbfonts cbfonts-fd"`.
    - This keeps Chinese and common typography support on top of `scheme-medium`.
    - The default now also covers a broader ML/NLP paper stack used by ICML, NeurIPS, ICLR, EMNLP and similar templates: `array.sty`, `tabularx.sty`, `multicol.sty`, `afterpage.sty` and `xspace.sty` via `tools`, `subcaption` via `caption`, `nicefrac` via `units`, `stfloats` via `sttools`, `balance` via `preprint`, `pifont` via `psnfss`, `newtxmath` via `newtx`, `extarticle` via `extsizes`, `xifthen` plus `ifmtarg`, `datetime` plus `fmtcount`, `XCharter` plus `fontaxes`, `forest` plus `elocalloc`, `changes` plus `xstring` and `truncate`, `bclogo` with `mdframed` and TikZ support via `pgf`, `epigraph` plus `nextpage`, `CJKutf8` via `cjk`, `textgreek` with Greek font support via `greek-fontenc`, `cbfonts`, and `cbfonts-fd`, `xurl.sty` via `xurl`, and `\forloop` via `forloop`, plus common packages for algorithms, lists, tables, fonts, notes, colors, headers/footers and hyperlinks.
@@ -38,7 +43,7 @@
    - If you change either TeX Live variable after the base image already exists, set `OVERLEAF_FORCE_BASE_REBUILD=true` for the next build.
    - Conference template files themselves such as `icml2026.sty`, `neurips_2026.sty`, `iclr2026_conference.sty`, or ACL/EMNLP style files are not installed from TeX Live. Those still need to live inside the project source tree.
    - The curated build-from-scratch package manifest is tracked in [texlive-packages.lumia.md](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/deploy/texlive-packages.lumia.md).
-9. `OVERLEAF_PHUSION_BASEIMAGE_TAG` controls the parent image used by [server-ce/Dockerfile-base](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/server-ce/Dockerfile-base).
+10. `OVERLEAF_PHUSION_BASEIMAGE_TAG` controls the parent image used by [server-ce/Dockerfile-base](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/server-ce/Dockerfile-base).
    - Default is `phusion/baseimage:noble-1.0.2`.
    - If your Docker daemon's mirror rate-limits Docker Hub, point this to a locally loaded image tag or another reachable registry path.
 
@@ -88,6 +93,57 @@ docker compose --env-file deploy/overleaf.lumia.env -f deploy/docker-compose.lum
 
 This approach is useful for incremental fixes. For long-term reproducibility, also add the same packages to `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` and rebuild the base image later.
 
+## Online backup
+
+If you want a low-friction recurring backup without taking Overleaf offline, use the helper script:
+
+```bash
+./deploy/backup-overleaf.sh ./deploy/overleaf.lumia.env
+```
+
+By default it writes a timestamped backup under `deploy/backups/` and includes:
+
+- a logical MongoDB dump of the `sharelatex` database via `mongodump`
+- a tarball of `deploy/data/overleaf`
+- a Redis snapshot copied after `BGSAVE`
+- a small manifest and SHA256 checksums
+
+You can override the backup destination with a second argument:
+
+```bash
+./deploy/backup-overleaf.sh ./deploy/overleaf.lumia.env /srv/overleaf-backups
+```
+
+Notes:
+
+- This is an online backup, so it avoids a maintenance window.
+- MongoDB is backed up logically, which is safer than copying `deploy/data/mongo` while the server is live.
+- `deploy/data/overleaf` is archived directly from disk and is usually fine for routine backups on a small instance.
+- For major upgrades or migration dry runs, it is still worth taking one extra short offline backup.
+
+## Restore from backup
+
+To restore a backup created by `backup-overleaf.sh`, use the restore helper:
+
+```bash
+./deploy/restore-overleaf.sh ./deploy/overleaf.lumia.env ./deploy/backups/2026-04-01-150517 --yes
+```
+
+Behavior:
+
+- stops the Overleaf stack
+- verifies `SHA256SUMS` when present
+- moves the current `deploy/data/{mongo,redis,overleaf}` directories into `deploy/restore-safety/<timestamp>/`
+- restores `overleaf-data.tar.gz`
+- restores Redis from `redis-dump.rdb.gz` when present
+- starts Mongo alone, restores the logical Mongo dump, then starts the full stack
+
+Notes:
+
+- This is intentionally an offline restore. Do not try to overwrite a live instance in place.
+- The script keeps the pre-restore data under `deploy/restore-safety/` instead of deleting it.
+- After recovery is confirmed, you can manually clean up old safety copies and old backups.
+
 ## HTTPS
 
 For public deployment, do not expose Overleaf itself directly on a public port with TLS disabled. The recommended layout is:
@@ -135,6 +191,25 @@ Use the launchpad page to create the first local Overleaf account record for the
 ```text
 http://YOUR_HOST_OR_IP:38080/launchpad
 ```
+
+## External accounts under LDAP
+
+When LDAP is the default authentication method, site admins can still create fully independent external accounts that sign in with email and password.
+
+- Admins open `/admin/external-users`
+- Enter one or more external email addresses
+- Overleaf creates independent local accounts and sends activation emails
+- Invited users set their password from the activation link
+- Invited users sign in through `/login/external`
+
+This is separate from LDAP-backed users:
+
+- External accounts are independent Overleaf accounts with their own password
+- They are not secondary emails on an admin account
+- Ordinary users cannot create external accounts for other people
+- External-account users can still change their own primary email through account settings
+- LDAP-backed users are treated as read-only for email changes in account settings
+- LDAP-backed users should generally keep their mapped Overleaf email unchanged unless you also change the LDAP-to-Overleaf lookup rule
 
 ## Pre-provision normal LDAP users
 
