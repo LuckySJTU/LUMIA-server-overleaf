@@ -60,6 +60,9 @@ normalize_package() {
     bibentry)
       echo "natbib"
       ;;
+    gb7714-2015|gb7714-2015ay|gb7714-2015ms|biblatex-gb7714-2015)
+      echo "biblatex-gb7714-2015"
+      ;;
     XCharter|xcharter)
       echo "xcharter"
       ;;
