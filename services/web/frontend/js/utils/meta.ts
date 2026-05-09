@@ -134,6 +134,7 @@ export interface Meta {
   'ol-galleryTagName': string
   'ol-gitBridgeEnabled': boolean
   'ol-gitBridgePublicBaseUrl': string
+  'ol-githubSyncEnabled': boolean
   'ol-github': { enabled: boolean; error: boolean }
   'ol-groupAuditLogs': []
   'ol-groupDomains': []

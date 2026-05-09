@@ -28,6 +28,18 @@
 
 For more information on Sandbox Compiles check out our [documentation](https://docs.overleaf.com/on-premises/configuration/overleaf-toolkit/server-pro-only-configuration/sandboxed-compiles).
 
+## LUMIA Open Source Notice
+
+This repository is the public source tree for the LUMIA Overleaf service, which is based on Overleaf Community Edition.
+
+- Public source: <https://github.com/LuckySJTU/LUMIA-server-overleaf>
+- Upstream Overleaf Community Edition: <https://github.com/overleaf/overleaf>
+- License: GNU Affero General Public License v3.0 (AGPL-3.0), as provided in [`LICENSE`](LICENSE).
+
+Users who interact with the modified LUMIA Overleaf service over the network can access the corresponding modified source code from this public repository. The published source code does not include deployment secrets, sensitive environment values, user data, GitHub access tokens, database contents, project files, logs, or backups.
+
+The LUMIA changes include deployment configuration for the LUMIA cluster, GitHub sync support, TeX Live package additions, and other Community Edition adaptations needed for this environment. This service is not an official Overleaf-hosted service; the Overleaf name and marks remain the property of their respective owners.
+
 ## Enterprise
 
 If you want help installing and maintaining Overleaf in your lab or workplace, we offer an officially supported version called [Overleaf Server Pro](https://www.overleaf.com/for/enterprises). It also includes more features for security (SSO with LDAP or SAML), administration and collaboration (e.g. tracked changes). [Find out more!](https://www.overleaf.com/for/enterprises)

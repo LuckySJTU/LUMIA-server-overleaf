@@ -99,3 +99,92 @@
   color: var(--integrations-panel-description-color);
   margin-bottom: 0;
 }
+
+.integrations-panel-sync {
+  color: var(--integrations-panel-color);
+  border-bottom: 1px solid var(--integrations-panel-card-border);
+  padding: var(--spacing-04);
+}
+
+.integrations-panel-sync-header {
+  display: flex;
+  gap: var(--spacing-04);
+  align-items: flex-start;
+  margin-bottom: var(--spacing-04);
+
+  h3 {
+    font-size: var(--font-size-03);
+    line-height: 1.3;
+    margin: 0;
+  }
+
+  p {
+    color: var(--integrations-panel-description-color);
+    font-size: var(--font-size-01);
+    line-height: 1.4;
+    margin: var(--spacing-01) 0 0;
+  }
+}
+
+.integrations-panel-sync-field {
+  display: block;
+  margin-bottom: var(--spacing-03);
+
+  span {
+    display: block;
+    color: var(--integrations-panel-description-color);
+    font-size: var(--font-size-01);
+    margin-bottom: var(--spacing-01);
+  }
+}
+
+.integrations-panel-sync-check {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-02);
+  color: var(--integrations-panel-description-color);
+  font-size: var(--font-size-01);
+  margin-bottom: var(--spacing-03);
+}
+
+.integrations-panel-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-02);
+  margin-bottom: var(--spacing-03);
+}
+
+.integrations-panel-sync-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-02);
+  color: var(--integrations-panel-description-color);
+  font-size: var(--font-size-01);
+  margin-bottom: var(--spacing-03);
+
+  strong,
+  code {
+    color: var(--integrations-panel-color);
+  }
+}
+
+.integrations-panel-sync-message,
+.integrations-panel-sync-error {
+  border-radius: var(--border-radius-medium);
+  font-size: var(--font-size-01);
+  line-height: 1.4;
+  margin-top: var(--spacing-02);
+  padding: var(--spacing-02) var(--spacing-03);
+}
+
+.integrations-panel-sync-message {
+  background-color: var(--bg-accent-03);
+  color: var(--content-positive);
+}
+
+.integrations-panel-sync-error {
+  background-color: var(--bg-light-secondary);
+  border-left: 3px solid var(--bg-danger-01);
+  color: var(--content-danger);
+}

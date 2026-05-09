@@ -1,0 +1,42 @@
+extends ../layout-website-redesign
+
+block vars
+	- isWebsiteRedesign = true
+
+block content
+	main#main-content.content
+		.container
+			.row
+				.col-lg-8.offset-lg-2
+					.page-header
+						h1 LUMIA Overleaf 开源说明
+						p.text-muted
+							| LUMIA Overleaf 是基于 Overleaf Community Edition 修改和部署的在线 LaTeX 协作服务。
+
+					h2 源码地址
+					p
+						| 本服务对应的修改源码公开在：
+						a(
+							href='https://github.com/LuckySJTU/LUMIA-server-overleaf'
+							target='_blank'
+							rel='noopener noreferrer'
+						) https://github.com/LuckySJTU/LUMIA-server-overleaf
+					p
+						| 上游社区版本源码在：
+						a(
+							href='https://github.com/overleaf/overleaf'
+							target='_blank'
+							rel='noopener noreferrer'
+						) https://github.com/overleaf/overleaf
+
+					h2 许可证与源码获取
+					p
+						| Overleaf Community Edition 使用 GNU Affero General Public License v3.0（AGPL-3.0）发布。LUMIA 对社区版代码所做的修改也按照 AGPL-3.0 提供；通过网络使用本服务的用户可以从上面的公开仓库获取对应源码。
+					p
+						| 公开源码不包含服务器运行密钥、环境变量中的敏感配置、用户数据、GitHub 访问令牌、数据库内容、项目文件、日志或备份。
+
+					h2 LUMIA 修改范围
+					p
+						| 当前仓库包含 LUMIA 部署配置、GitHub 同步功能、TeX Live 扩展包配置，以及为集群运行环境所做的社区版适配。
+					p
+						| 本服务不是 Overleaf 官方托管服务；Overleaf 名称和标识归其权利人所有。

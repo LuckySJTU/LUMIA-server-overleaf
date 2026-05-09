@@ -29,13 +29,18 @@
    - `OVERLEAF_HTTP_BIND_IP=127.0.0.1`
    - `OVERLEAF_SITE_URL=https://your-domain`
    - `OVERLEAF_SECURE_COOKIE=true`
-7. Keep `OVERLEAF_MONGO_IMAGE=mongo:8.0`.
+7. GitHub sync is controlled by the server-side `GITHUB_SYNC_*` variables.
+   - Keep `GITHUB_SYNC_ENABLED=true` to expose the GitHub sync panel and API.
+   - `GITHUB_SYNC_ROOT_DIR` controls the temporary git checkout location inside the container.
+   - `GITHUB_SYNC_GIT_TIMEOUT_MS` controls the git command timeout.
+   - `GITHUB_SYNC_PROXY_URL` is used only by git commands running on the server. It is not sent to the browser or stored per project.
+8. Keep `OVERLEAF_MONGO_IMAGE=mongo:8.0`.
    - Current Overleaf startup checks require MongoDB 8.0 or newer.
-8. `OVERLEAF_TEXLIVE_SCHEME` controls the base TeX Live scheme installed by `install-tl`.
+9. `OVERLEAF_TEXLIVE_SCHEME` controls the base TeX Live scheme installed by `install-tl`.
    - Default is `scheme-medium`.
    - The official TeX Live guide describes `medium` as `small + more packages and languages`, while `small` already includes `basic + xetex, metapost, a few languages`.
    - This is more stable than starting from `scheme-basic` and then asking `tlmgr` to install many large collections in one step.
-9. `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` controls extra LaTeX packages installed after the base scheme.
+10. `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` controls extra LaTeX packages installed after the base scheme.
    - Default is `"collection-langcjk microtype tools caption booktabs multirow cleveref mathtools todonotes xcolor hyperref enumitem algorithms algorithmicx natbib url xurl units wrapfig float sttools adjustbox threeparttable tablefootnote soul ulem listings pgf pgfplots siunitx makecell preprint forloop xifthen ifmtarg cmap psnfss textcase changepage datetime fmtcount fancyhdr lastpage titlesec needspace kvoptions tcolorbox fontawesome5 xcharter fontaxes mweights newtx zlmtt extsizes geometry colortbl forest elocalloc changes xstring truncate bclogo mdframed zref lipsum tocloft bbding epigraph nextpage minitoc textgreek cjk greek-fontenc cbfonts cbfonts-fd"`.
    - This keeps Chinese and common typography support on top of `scheme-medium`.
    - The default now also covers a broader ML/NLP paper stack used by ICML, NeurIPS, ICLR, EMNLP and similar templates: `array.sty`, `tabularx.sty`, `multicol.sty`, `afterpage.sty` and `xspace.sty` via `tools`, `subcaption` via `caption`, `nicefrac` via `units`, `stfloats` via `sttools`, `balance` via `preprint`, `pifont` via `psnfss`, `newtxmath` via `newtx`, `extarticle` via `extsizes`, `xifthen` plus `ifmtarg`, `datetime` plus `fmtcount`, `XCharter` plus `fontaxes`, `forest` plus `elocalloc`, `changes` plus `xstring` and `truncate`, `bclogo` with `mdframed` and TikZ support via `pgf`, `epigraph` plus `nextpage`, `CJKutf8` via `cjk`, `textgreek` with Greek font support via `greek-fontenc`, `cbfonts`, and `cbfonts-fd`, `xurl.sty` via `xurl`, and `\forloop` via `forloop`, plus common packages for algorithms, lists, tables, fonts, notes, colors, headers/footers and hyperlinks.
@@ -43,7 +48,7 @@
    - If you change either TeX Live variable after the base image already exists, set `OVERLEAF_FORCE_BASE_REBUILD=true` for the next build.
    - Conference template files themselves such as `icml2026.sty`, `neurips_2026.sty`, `iclr2026_conference.sty`, or ACL/EMNLP style files are not installed from TeX Live. Those still need to live inside the project source tree.
    - The curated build-from-scratch package manifest is tracked in [texlive-packages.lumia.md](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/deploy/texlive-packages.lumia.md).
-10. `OVERLEAF_PHUSION_BASEIMAGE_TAG` controls the parent image used by [server-ce/Dockerfile-base](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/server-ce/Dockerfile-base).
+11. `OVERLEAF_PHUSION_BASEIMAGE_TAG` controls the parent image used by [server-ce/Dockerfile-base](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/server-ce/Dockerfile-base).
    - Default is `phusion/baseimage:noble-1.0.2`.
    - If your Docker daemon's mirror rate-limits Docker Hub, point this to a locally loaded image tag or another reachable registry path.
 

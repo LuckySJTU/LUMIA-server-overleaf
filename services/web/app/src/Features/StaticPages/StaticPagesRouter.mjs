@@ -11,11 +11,18 @@
 import HomeController from './HomeController.mjs'
 
 import UniversityController from './UniversityController.mjs'
+import AuthenticationController from '../Authentication/AuthenticationController.mjs'
 
 export default {
   apply(webRouter) {
     webRouter.get('/', HomeController.index)
     webRouter.get('/home', HomeController.home)
+    AuthenticationController.addEndpointToLoginWhitelist('/open-source')
+    webRouter.get('/open-source', (req, res) => {
+      res.render('general/open-source', {
+        title: 'Open Source Notice',
+      })
+    })
 
     webRouter.get(
       '/planned_maintenance',

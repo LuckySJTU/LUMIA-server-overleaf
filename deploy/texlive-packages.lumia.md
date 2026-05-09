@@ -7,7 +7,7 @@ This file is the canonical reference for the extra TeX Live packages already ide
 Use this exact value for `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` when rebuilding from scratch:
 
 ```bash
-OVERLEAF_TEXLIVE_EXTRA_PACKAGES="collection-langcjk microtype tools caption booktabs multirow cleveref mathtools todonotes xcolor hyperref enumitem algorithms algorithmicx natbib biblatex biblatex-gb7714-2015 biber url xurl units wrapfig float sttools adjustbox threeparttable tablefootnote soul ulem listings pgf pgfplots siunitx makecell preprint forloop xifthen ifmtarg cmap psnfss textcase changepage datetime fmtcount fancyhdr lastpage titlesec needspace kvoptions tcolorbox fontawesome5 xcharter fontaxes mweights newtx zlmtt extsizes geometry colortbl forest elocalloc changes xstring truncate bclogo mdframed zref lipsum tocloft bbding epigraph nextpage minitoc textgreek cjk greek-fontenc cbfonts cbfonts-fd silence tikzfill ifoddpage relsize"
+OVERLEAF_TEXLIVE_EXTRA_PACKAGES="collection-langcjk microtype tools caption booktabs multirow cleveref mathtools todonotes xcolor hyperref enumitem algorithms algorithmicx natbib biblatex biblatex-gb7714-2015 biber url xurl units wrapfig float sttools adjustbox threeparttable tablefootnote soul ulem listings pgf pgfplots siunitx makecell preprint forloop xifthen ifmtarg cmap psnfss textcase changepage datetime fmtcount fancyhdr lastpage titlesec needspace kvoptions tcolorbox fontawesome5 xcharter fontaxes mweights newtx zlmtt extsizes geometry colortbl forest elocalloc changes xstring truncate bclogo mdframed zref lipsum tocloft bbding epigraph nextpage minitoc textgreek cjk greek-fontenc cbfonts cbfonts-fd silence tikzfill ifoddpage relsize inconsolata upquote"
 ```
 
 ## Packages covered
@@ -94,6 +94,7 @@ OVERLEAF_TEXLIVE_EXTRA_PACKAGES="collection-langcjk microtype tools caption book
 - `tikzfill`
 - `ifoddpage`
 - `relsize`
+- `inconsolata`, `upquote`
 
 ## Alias map used by `extend-texlive-image.sh`
 

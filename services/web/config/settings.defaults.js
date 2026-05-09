@@ -424,6 +424,16 @@ module.exports = {
     personal: defaultFeatures,
   },
 
+  enableGithubSync: process.env.GITHUB_SYNC_ENABLED === 'true',
+  githubSync: {
+    rootDir:
+      process.env.GITHUB_SYNC_ROOT_DIR ||
+      Path.join('/tmp', 'overleaf-github-sync'),
+    gitTimeoutMs: intFromEnv('GITHUB_SYNC_GIT_TIMEOUT_MS', 2 * minutes),
+    proxyUrl:
+      process.env.GITHUB_SYNC_PROXY_URL || 'http://192.168.102.101:7890',
+  },
+
   aiFeatures: {
     freeTrialQuota: 'basic',
     unlimitedQuota: 'unlimited',
@@ -790,11 +800,18 @@ module.exports = {
     title: process.env.APP_NAME || 'Overleaf Community Edition',
 
     hide_powered_by: process.env.NAV_HIDE_POWERED_BY === 'true',
-    left_footer: [],
+    left_footer: [
+      {
+        text: 'Open source notice',
+        url: '/open-source',
+      },
+    ],
 
     right_footer: [
       {
-        text: '<a href="https://github.com/overleaf/overleaf">Fork on GitHub!</a>',
+        text: 'Source on GitHub',
+        url: 'https://github.com/LuckySJTU/LUMIA-server-overleaf',
+        label: 'Source code on GitHub',
       },
     ],
 
