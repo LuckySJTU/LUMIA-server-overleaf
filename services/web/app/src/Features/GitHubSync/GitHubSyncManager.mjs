@@ -30,6 +30,7 @@ const DEFAULT_BRANCH = 'main'
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000
 const DEFAULT_PROXY_URL = 'http://192.168.102.101:7890'
 const GIT_SOURCE = 'github-sync'
+const MAX_CHANGE_SUMMARY_FILES = 100
 const GITHUB_REMOTE_RX =
   /^(?:https:\/\/github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/
 
@@ -171,7 +172,10 @@ async function linkProject({ projectId, ownerId, remoteUrl, branch }) {
 
 async function unlinkProject(projectId) {
   await db.githubSyncProjectStates.deleteOne(stateQuery(projectId))
-  await fs.promises.rm(checkoutDir(projectId), { recursive: true, force: true })
+  await fs.promises.rm(checkoutDir(projectId), {
+    recursive: true,
+    force: true,
+  })
 }
 
 async function pullFromGitHub({ projectId, userId, token }) {
@@ -185,17 +189,31 @@ async function pullFromGitHub({ projectId, userId, token }) {
     token,
     proxyUrl: resolvedProxyUrl,
   })
+  const commitHash = commit.stdout.trim()
+  const changeSummary = await summarizePullChanges({
+    dir,
+    previousCommit: state.lastSyncedCommit,
+    nextCommit: commitHash,
+    token,
+    proxyUrl: resolvedProxyUrl,
+  })
   const imported = await replaceProjectFromDirectory({
     projectId,
     userId,
     sourceDir: dir,
   })
   await recordSyncState(projectId, {
-    lastSyncedCommit: commit.stdout.trim(),
-    lastPulledCommit: commit.stdout.trim(),
+    lastSyncedCommit: commitHash,
+    lastPulledCommit: commitHash,
     lastSyncedAt: new Date(),
   })
-  return { commit: commit.stdout.trim(), imported }
+  return {
+    commit: commitHash,
+    imported,
+    changes: changeSummary.files,
+    changesTruncated: changeSummary.truncated,
+    reloadRequired: true,
+  }
 }
 
 async function pushToGitHub({
@@ -225,15 +243,21 @@ async function pushToGitHub({
     })
   }
 
+  await DocumentUpdaterHandler.promises.flushProjectToMongo(projectId)
   await replaceCheckoutWithProject(projectId, dir)
   await git(['add', '-A'], { cwd: dir, token, proxyUrl: resolvedProxyUrl })
-  const status = await git(['status', '--porcelain'], {
-    cwd: dir,
+  const changeSummary = await summarizeCachedChanges({
+    dir,
     token,
     proxyUrl: resolvedProxyUrl,
   })
-  if (!status.stdout.trim()) {
-    return { status: 'unchanged', commit: remoteCommit }
+  if (changeSummary.files.length === 0) {
+    return {
+      status: 'unchanged',
+      commit: remoteCommit,
+      changes: [],
+      changesTruncated: false,
+    }
   }
 
   await git(
@@ -246,7 +270,7 @@ async function pushToGitHub({
       '-m',
       commitMessage || `Sync Overleaf project ${projectIdString(projectId)}`,
     ],
-    { cwd: dir, token, proxyUrl: resolvedProxyUrl }
+    { cwd: dir, token, proxyUrl: resolvedProxyUrl },
   )
   await git(['push', 'origin', `HEAD:${state.branch}`], {
     cwd: dir,
@@ -265,7 +289,125 @@ async function pushToGitHub({
     lastPushedCommit: pushedCommit,
     lastSyncedAt: new Date(),
   })
-  return { status: 'pushed', commit: pushedCommit }
+  return {
+    status: 'pushed',
+    commit: pushedCommit,
+    changes: changeSummary.files,
+    changesTruncated: changeSummary.truncated,
+  }
+}
+
+async function summarizePullChanges({
+  dir,
+  previousCommit,
+  nextCommit,
+  token,
+  proxyUrl,
+}) {
+  if (previousCommit && previousCommit === nextCommit) {
+    return emptyChangeSummary()
+  }
+
+  if (
+    previousCommit &&
+    (await commitExists(dir, previousCommit, token, proxyUrl))
+  ) {
+    const result = await git(
+      ['diff', '--name-status', '--find-renames', previousCommit, nextCommit],
+      {
+        cwd: dir,
+        token,
+        proxyUrl,
+      },
+    )
+    return parseNameStatus(result.stdout)
+  }
+
+  const result = await git(['ls-tree', '-r', '--name-only', nextCommit], {
+    cwd: dir,
+    token,
+    proxyUrl,
+  })
+  return limitChangeSummary(
+    result.stdout
+      .split('\n')
+      .map(file => file.trim())
+      .filter(Boolean)
+      .map(file => ({ status: 'added', path: file })),
+  )
+}
+
+async function summarizeCachedChanges({ dir, token, proxyUrl }) {
+  const result = await git(
+    ['diff', '--cached', '--name-status', '--find-renames'],
+    {
+      cwd: dir,
+      token,
+      proxyUrl,
+    },
+  )
+  return parseNameStatus(result.stdout)
+}
+
+async function commitExists(dir, commit, token, proxyUrl) {
+  try {
+    await git(['cat-file', '-e', `${commit}^{commit}`], {
+      cwd: dir,
+      token,
+      proxyUrl,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function parseNameStatus(output) {
+  const changes = []
+  for (const line of output.split('\n')) {
+    if (!line.trim()) {
+      continue
+    }
+    const [rawStatus, firstPath, secondPath] = line.split('\t')
+    const status = normalizeChangeStatus(rawStatus)
+    if (status === 'renamed' || status === 'copied') {
+      changes.push({ status, oldPath: firstPath, path: secondPath })
+    } else {
+      changes.push({ status, path: firstPath })
+    }
+  }
+  return limitChangeSummary(changes)
+}
+
+function normalizeChangeStatus(rawStatus) {
+  switch (rawStatus[0]) {
+    case 'A':
+      return 'added'
+    case 'M':
+      return 'modified'
+    case 'D':
+      return 'deleted'
+    case 'R':
+      return 'renamed'
+    case 'C':
+      return 'copied'
+    default:
+      return 'changed'
+  }
+}
+
+function limitChangeSummary(changes) {
+  return {
+    files: changes.slice(0, MAX_CHANGE_SUMMARY_FILES),
+    truncated: changes.length > MAX_CHANGE_SUMMARY_FILES,
+  }
+}
+
+function emptyChangeSummary() {
+  return {
+    files: [],
+    truncated: false,
+  }
 }
 
 async function requireLinkedState(projectId) {
@@ -398,7 +540,7 @@ async function withAskPass(token, fn) {
     return await fn({})
   }
   const dir = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'overleaf-github-askpass-')
+    path.join(os.tmpdir(), 'overleaf-github-askpass-'),
   )
   const askPass = path.join(dir, 'askpass.sh')
   await fs.promises.writeFile(
@@ -411,7 +553,7 @@ async function withAskPass(token, fn) {
       'esac',
       '',
     ].join('\n'),
-    { mode: 0o700 }
+    { mode: 0o700 },
   )
   try {
     return await fn({
@@ -436,7 +578,7 @@ async function replaceCheckoutWithProject(projectId, dir) {
     await fs.promises.mkdir(path.dirname(target), { recursive: true })
     const { stream } = await HistoryManager.promises.requestBlobWithProjectId(
       projectId,
-      file.hash
+      file.hash,
     )
     await pipeline(stream, fs.createWriteStream(target))
   }
@@ -453,18 +595,17 @@ async function replaceProjectFromDirectory({ projectId, userId, sourceDir }) {
     throw new GitHubSyncError('project_not_found', 404)
   }
 
-  const importEntries = await FileSystemImportManager.promises.importDir(
-    sourceDir
-  )
+  const importEntries =
+    await FileSystemImportManager.promises.importDir(sourceDir)
   const { docEntries, fileEntries } = await createEntriesFromImports(
     project,
-    importEntries
+    importEntries,
   )
 
   const oldEntities = ProjectEntityHandler.getAllEntitiesFromProject(project)
   const rootFolder = FolderStructureBuilder.buildFolderStructure(
     docEntries,
-    fileEntries
+    fileEntries,
   )
   const newProject = await Project.findOneAndUpdate(
     { _id: projectId },
@@ -480,7 +621,7 @@ async function replaceProjectFromDirectory({ projectId, userId, sourceDir }) {
       },
       $inc: { version: 1 },
     },
-    { new: true }
+    { new: true },
   ).exec()
   if (!newProject) {
     throw new GitHubSyncError('project_not_found', 404)
@@ -499,7 +640,7 @@ async function replaceProjectFromDirectory({ projectId, userId, sourceDir }) {
       newFiles: fileEntries,
       newProject,
     },
-    GIT_SOURCE
+    GIT_SOURCE,
   )
   await cleanupOldDocs(project, oldEntities.docs)
   await ProjectRootDocManager.promises.setRootDocAutomatically(projectId)
@@ -523,7 +664,7 @@ async function createEntriesFromImports(project, importEntries) {
           doc._id.toString(),
           importEntry.lines,
           0,
-          {}
+          {},
         )
         docEntries.push({
           doc,
@@ -545,7 +686,7 @@ async function createEntriesFromImports(project, importEntries) {
             project._id,
             historyId,
             { name: path.basename(importEntry.projectPath) },
-            importEntry.fsPath
+            importEntry.fsPath,
           )
         fileEntries.push({
           createdBlob,
@@ -569,16 +710,16 @@ async function cleanupOldDocs(project, docs) {
         project._id.toString(),
         doc._id.toString(),
         doc.name,
-        deletedAt
+        deletedAt,
       )
       await DocumentUpdaterHandler.promises.deleteDoc(
         project._id.toString(),
-        doc._id.toString()
+        doc._id.toString(),
       )
     } catch (error) {
       logger.warn(
         { err: error, projectId: project._id, docId: doc._id },
-        'failed to clean up old doc after github sync import'
+        'failed to clean up old doc after github sync import',
       )
     }
   }

@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { deleteJSON, getJSON, postJSON } from '@/infrastructure/fetch-json'
 import type { FetchError } from '@/infrastructure/fetch-json'
 import { useProjectContext } from '@/shared/context/project-context'
+import { useEditorManagerContext } from '@/features/ide-react/context/editor-manager-context'
 import OLButton from '@/shared/components/ol/ol-button'
 import MaterialIcon from '@/shared/components/material-icon'
+import useAbortController from '@/shared/hooks/use-abort-controller'
+import { signalWithTimeout } from '@/utils/abort-signal'
 
 type GitHubSyncState = {
   linked: boolean
@@ -16,9 +19,26 @@ type GitHubSyncState = {
 type GitHubSyncResult = {
   status?: string
   commit?: string
+  changes?: GitHubSyncChange[]
+  changesTruncated?: boolean
+  reloadRequired?: boolean
+}
+
+type GitHubSyncChange = {
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'changed'
+  path: string
+  oldPath?: string
+}
+
+type ActionFeedback = {
+  message: string
+  changes?: GitHubSyncChange[]
+  changesTruncated?: boolean
+  reloadAfterMs?: number
 }
 
 const DEFAULT_BRANCH = 'main'
+const SAVE_BEFORE_PUSH_TIMEOUT_MS = 15000
 
 const ERROR_MESSAGES: Record<string, string> = {
   github_sync_not_linked: '请先绑定 GitHub 仓库。',
@@ -26,12 +46,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_branch: '分支名无效。',
   invalid_github_remote_url: '请输入有效的 GitHub 仓库地址。',
   invalid_proxy_url: '服务器 GitHub 代理配置无效，请联系管理员。',
+  local_changes_not_saved: '本地修改仍在保存中，请稍后再推送。',
   remote_has_new_commits:
     'GitHub 上有新的提交。请先拉取，或者勾选强制推送后再试。',
 }
 
 export default function GitHubSyncPanel() {
   const { projectId } = useProjectContext()
+  const { openDocs } = useEditorManagerContext()
+  const { signal } = useAbortController()
   const [state, setState] = useState<GitHubSyncState>({ linked: false })
   const [remoteUrl, setRemoteUrl] = useState('')
   const [branch, setBranch] = useState(DEFAULT_BRANCH)
@@ -40,6 +63,9 @@ export default function GitHubSyncPanel() {
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [changes, setChanges] = useState<GitHubSyncChange[]>([])
+  const [changesTruncated, setChangesTruncated] = useState(false)
+  const reloadTimerRef = useRef<number | null>(null)
 
   const endpoint = `/project/${projectId}/github-sync`
 
@@ -57,20 +83,46 @@ export default function GitHubSyncPanel() {
     })
   }, [loadState])
 
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current) {
+        window.clearTimeout(reloadTimerRef.current)
+      }
+    }
+  }, [])
+
   const runAction = useCallback(
-    async (action: string, task: () => Promise<string>) => {
+    async (action: string, task: () => Promise<string | ActionFeedback>) => {
       setLoadingAction(action)
       setError(null)
       setMessage(null)
+      setChanges([])
+      setChangesTruncated(false)
+      if (reloadTimerRef.current) {
+        window.clearTimeout(reloadTimerRef.current)
+        reloadTimerRef.current = null
+      }
       try {
-        setMessage(await task())
+        const feedback = await task()
+        if (typeof feedback === 'string') {
+          setMessage(feedback)
+        } else {
+          setMessage(feedback.message)
+          setChanges(feedback.changes || [])
+          setChangesTruncated(feedback.changesTruncated === true)
+          if (feedback.reloadAfterMs) {
+            reloadTimerRef.current = window.setTimeout(() => {
+              window.location.reload()
+            }, feedback.reloadAfterMs)
+          }
+        }
       } catch (error) {
         setError(errorMessage(error))
       } finally {
         setLoadingAction(null)
       }
     },
-    []
+    [],
   )
 
   const handleLink = useCallback(() => {
@@ -105,12 +157,26 @@ export default function GitHubSyncPanel() {
         },
       })
       await loadState()
-      return `已从 GitHub 拉取 ${shortCommit(result.commit)}。如果文件树未刷新，请刷新页面。`
+      return {
+        message: `已从 GitHub 拉取 ${shortCommit(
+          result.commit,
+        )}。页面将在 5 秒后自动刷新。`,
+        changes: result.changes,
+        changesTruncated: result.changesTruncated,
+        reloadAfterMs: result.reloadRequired === false ? undefined : 5000,
+      }
     })
   }, [endpoint, loadState, runAction, token])
 
   const handlePush = useCallback(() => {
     void runAction('push', async () => {
+      setMessage('正在保存本地修改...')
+      await openDocs.awaitBufferedOps(
+        signalWithTimeout(signal, SAVE_BEFORE_PUSH_TIMEOUT_MS),
+      )
+      if (openDocs.hasUnsavedChanges()) {
+        throw new Error('local_changes_not_saved')
+      }
       const result = await postJSON<GitHubSyncResult>(`${endpoint}/push`, {
         body: {
           token,
@@ -119,11 +185,19 @@ export default function GitHubSyncPanel() {
       })
       await loadState()
       if (result.status === 'unchanged') {
-        return '当前项目没有需要推送的改动。'
+        return {
+          message: '当前项目没有需要推送的改动。',
+          changes: [],
+          changesTruncated: false,
+        }
       }
-      return `已推送到 GitHub ${shortCommit(result.commit)}。`
+      return {
+        message: `已推送到 GitHub ${shortCommit(result.commit)}。`,
+        changes: result.changes,
+        changesTruncated: result.changesTruncated,
+      }
     })
-  }, [endpoint, force, loadState, runAction, token])
+  }, [endpoint, force, loadState, openDocs, runAction, signal, token])
 
   const isBusy = loadingAction !== null
   const isLinked = state.linked
@@ -248,6 +322,28 @@ export default function GitHubSyncPanel() {
           {message}
         </div>
       )}
+      {changes.length > 0 && (
+        <div className="integrations-panel-sync-changes">
+          <span>本轮文件变更</span>
+          <ul>
+            {changes.map(change => (
+              <li
+                key={`${change.status}:${change.oldPath || ''}:${change.path}`}
+              >
+                <strong>{changeStatusLabel(change.status)}</strong>
+                {change.oldPath ? (
+                  <>
+                    <code>{change.oldPath}</code>
+                    <span aria-hidden="true">-&gt;</span>
+                  </>
+                ) : null}
+                <code>{change.path}</code>
+              </li>
+            ))}
+          </ul>
+          {changesTruncated && <p>仅显示前 100 个变更文件。</p>}
+        </div>
+      )}
       {error && (
         <div className="integrations-panel-sync-error" role="alert">
           {error}
@@ -264,7 +360,27 @@ function shortCommit(commit?: string) {
   return commit.slice(0, 7)
 }
 
+function changeStatusLabel(status: GitHubSyncChange['status']) {
+  switch (status) {
+    case 'added':
+      return '新增'
+    case 'modified':
+      return '修改'
+    case 'deleted':
+      return '删除'
+    case 'renamed':
+      return '重命名'
+    case 'copied':
+      return '复制'
+    default:
+      return '变更'
+  }
+}
+
 function errorMessage(error: unknown) {
+  if (error instanceof Error && ERROR_MESSAGES[error.message]) {
+    return ERROR_MESSAGES[error.message]
+  }
   const fetchError = error as FetchError
   const errorCode = fetchError.data?.error
   if (typeof errorCode === 'string' && ERROR_MESSAGES[errorCode]) {
