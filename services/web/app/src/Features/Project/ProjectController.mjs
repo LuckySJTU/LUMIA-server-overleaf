@@ -317,12 +317,28 @@ const _ProjectController = {
       req.body.projectName != null ? req.body.projectName.trim() : undefined
     const { template } = req.body
 
-    const project = await (template === 'example'
-      ? ProjectCreationHandler.promises.createExampleProject(
+    let project
+    switch (template) {
+      case 'example':
+        project = await ProjectCreationHandler.promises.createExampleProject(
           userId,
           projectName
         )
-      : ProjectCreationHandler.promises.createBasicProject(userId, projectName))
+        break
+      case 'lumia-default':
+        project =
+          await ProjectCreationHandler.promises.createInternalDefaultProject(
+            userId,
+            projectName
+          )
+        break
+      default:
+        project = await ProjectCreationHandler.promises.createBasicProject(
+          userId,
+          projectName
+        )
+        break
+    }
 
     ProjectAuditLogHandler.addEntryIfManagedInBackground(
       project._id,

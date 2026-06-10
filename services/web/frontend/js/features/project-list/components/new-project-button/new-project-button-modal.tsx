@@ -1,5 +1,6 @@
 import BlankProjectModal from './blank-project-modal'
 import ExampleProjectModal from './example-project-modal'
+import InternalDefaultProjectModal from './internal-default-project-modal'
 import importOverleafModules from '../../../../../macros/import-overleaf-module.macro'
 import { JSXElementConstructor, lazy, Suspense, useCallback } from 'react'
 import { Nullable } from '../../../../../../types/utils'
@@ -11,6 +12,7 @@ const UploadProjectModal = lazy(() => import('./upload-project-modal'))
 export type NewProjectButtonModalVariant =
   | 'blank_project'
   | 'example_project'
+  | 'internal_default_project'
   | 'upload_project'
   | 'import_from_github'
 
@@ -41,6 +43,8 @@ function NewProjectButtonModal({ modal, onHide }: NewProjectButtonModalProps) {
       return <BlankProjectModal onHide={onHide} />
     case 'example_project':
       return <ExampleProjectModal onHide={onHide} />
+    case 'internal_default_project':
+      return <InternalDefaultProjectModal onHide={onHide} />
     case 'upload_project':
       return (
         <Suspense fallback={<FullSizeLoadingSpinner delay={500} />}>

@@ -127,6 +127,21 @@ function WelcomeMessageCreateNewProjectDropdown({
           <DropdownItem
             as="button"
             onClick={e =>
+              handleDropdownItemClick(
+                e,
+                'internal_default_project',
+                'internal-default-project'
+              )
+            }
+            tabIndex={-1}
+          >
+            {t('internal_default_project')}
+          </DropdownItem>
+        </li>
+        <li role="none">
+          <DropdownItem
+            as="button"
+            onClick={e =>
               handleDropdownItemClick(e, 'upload_project', 'upload-project')
             }
             tabIndex={-1}

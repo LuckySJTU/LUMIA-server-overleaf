@@ -40,6 +40,13 @@ const MONTH_NAMES = [
 const templateProjectDir = Features.hasFeature('saas')
   ? 'example-project'
   : 'example-project-sp'
+const internalDefaultTemplateDir = 'lumia-default'
+const internalDefaultTemplateRootDocName = 'main.tex'
+const internalDefaultTemplateDocNames = ['notations.tex', 'lumia.cls']
+const internalDefaultTemplateFileEntries = [
+  { folderPath: 'assets', fileName: 'logo.png' },
+  { folderPath: 'assets', fileName: 'hf.pdf' },
+]
 
 async function createBlankProject(
   ownerId,
@@ -185,6 +192,94 @@ async function createExampleProject(ownerId, projectName, attributes = {}) {
   return project
 }
 
+async function createInternalDefaultProject(
+  ownerId,
+  projectName,
+  attributes = {}
+) {
+  const project = await _createBlankProject(ownerId, projectName, attributes)
+
+  const docLines = await _buildTemplate(
+    `${internalDefaultTemplateDir}/${internalDefaultTemplateRootDocName}`,
+    ownerId,
+    projectName
+  )
+  await _createRootDoc(
+    project,
+    ownerId,
+    docLines,
+    internalDefaultTemplateRootDocName
+  )
+
+  for (const docName of internalDefaultTemplateDocNames) {
+    await _createInternalDefaultTemplateDoc(
+      project,
+      ownerId,
+      projectName,
+      docName
+    )
+  }
+
+  for (const fileEntry of internalDefaultTemplateFileEntries) {
+    await _addInternalDefaultTemplateFile(project, ownerId, fileEntry)
+  }
+
+  AnalyticsManager.recordEventForUserInBackground(ownerId, 'project-created', {
+    projectId: project._id,
+  })
+
+  return project
+}
+
+async function _createInternalDefaultTemplateDoc(
+  project,
+  ownerId,
+  projectName,
+  docName
+) {
+  const docLines = await _buildTemplate(
+    `${internalDefaultTemplateDir}/${docName}`,
+    ownerId,
+    projectName
+  )
+  await ProjectEntityUpdateHandler.promises.addDoc(
+    project._id,
+    project.rootFolder[0]._id,
+    docName,
+    docLines,
+    ownerId,
+    null
+  )
+}
+
+async function _addInternalDefaultTemplateFile(
+  project,
+  ownerId,
+  { folderPath, fileName }
+) {
+  const { folder } = await ProjectEntityUpdateHandler.promises.mkdirp(
+    project._id,
+    folderPath,
+    ownerId
+  )
+  const filePath = path.join(
+    import.meta.dirname,
+    '../../../templates/project_files',
+    internalDefaultTemplateDir,
+    folderPath,
+    fileName
+  )
+  await ProjectEntityUpdateHandler.promises.addFile(
+    project._id,
+    folder._id,
+    fileName,
+    filePath,
+    null,
+    ownerId,
+    null
+  )
+}
+
 async function _addExampleProjectFiles(ownerId, projectName, project) {
   const mainDocLines = await _buildTemplate(
     `${templateProjectDir}/main.tex`,
@@ -299,12 +394,12 @@ async function _createBlankProject(
   return project
 }
 
-async function _createRootDoc(project, ownerId, docLines) {
+async function _createRootDoc(project, ownerId, docLines, docName = 'main.tex') {
   try {
     const { doc } = await ProjectEntityUpdateHandler.promises.addDoc(
       project._id,
       project.rootFolder[0]._id,
-      'main.tex',
+      docName,
       docLines,
       ownerId,
       null
@@ -339,10 +434,12 @@ export default {
   createProjectFromSnippet: callbackify(createProjectFromSnippet),
   createBasicProject: callbackify(createBasicProject),
   createExampleProject: callbackify(createExampleProject),
+  createInternalDefaultProject: callbackify(createInternalDefaultProject),
   promises: {
     createBlankProject,
     createProjectFromSnippet,
     createBasicProject,
     createExampleProject,
+    createInternalDefaultProject,
   },
 }
