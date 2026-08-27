@@ -33,7 +33,8 @@
    - Keep `GITHUB_SYNC_ENABLED=true` to expose the GitHub sync panel and API.
    - `GITHUB_SYNC_ROOT_DIR` controls the temporary git checkout location inside the container.
    - `GITHUB_SYNC_GIT_TIMEOUT_MS` controls the git command timeout.
-   - `GITHUB_SYNC_PROXY_URL` is used only by git commands running on the server. It is not sent to the browser or stored per project.
+   - `GITHUB_SYNC_PROXY_URL` is used only by git commands running on the server. It is not sent to the browser or stored per project. If unset, the backend uses `http://192.168.102.101:7890`; set it to `none`, `off`, `false`, `direct`, or an empty value to disable the proxy.
+   - Overleaf review comments and tracked changes are mirrored through the server-generated `.overleaf/review.json` file in the linked GitHub repository. Keep this metadata file in sync with text changes made outside Overleaf to preserve review anchors.
 8. Keep `OVERLEAF_MONGO_IMAGE=mongo:8.0`.
    - Current Overleaf startup checks require MongoDB 8.0 or newer.
 9. `OVERLEAF_TEXLIVE_SCHEME` controls the base TeX Live scheme installed by `install-tl`.

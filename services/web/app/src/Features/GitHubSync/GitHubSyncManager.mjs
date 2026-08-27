@@ -1,4 +1,5 @@
 import childProcess from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,13 +12,16 @@ import OError from '@overleaf/o-error'
 import { db } from '../../infrastructure/mongodb.mjs'
 import { Doc } from '../../models/Doc.mjs'
 import { Project } from '../../models/Project.mjs'
+import ChatApiHandler from '../Chat/ChatApiHandler.mjs'
+import ChatManager from '../Chat/ChatManager.mjs'
 import DocstoreManager from '../Docstore/DocstoreManager.mjs'
 import DocumentUpdaterHandler from '../DocumentUpdater/DocumentUpdaterHandler.mjs'
+import EditorRealTimeController from '../Editor/EditorRealTimeController.mjs'
+import FileStoreHandler from '../FileStore/FileStoreHandler.mjs'
 import HistoryManager from '../History/HistoryManager.mjs'
 import ProjectEntityHandler from '../Project/ProjectEntityHandler.mjs'
 import ProjectGetter from '../Project/ProjectGetter.mjs'
 import ProjectRootDocManager from '../Project/ProjectRootDocManager.mjs'
-import FileStoreHandler from '../FileStore/FileStoreHandler.mjs'
 import FileSystemImportManager from '../Uploads/FileSystemImportManager.mjs'
 import FolderStructureBuilder from '../Project/FolderStructureBuilder.mjs'
 import SafePath from '../Project/SafePath.mjs'
@@ -30,7 +34,13 @@ const DEFAULT_BRANCH = 'main'
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000
 const DEFAULT_PROXY_URL = 'http://192.168.102.101:7890'
 const GIT_SOURCE = 'github-sync'
+const DISABLED_PROXY_VALUES = new Set(['', 'none', 'off', 'false', 'direct'])
+const REVIEW_METADATA_GENERATOR = 'LUMIA Overleaf GitHub Sync'
+const REVIEW_METADATA_PATH = '.overleaf/review.json'
+const REVIEW_METADATA_SCHEMA_VERSION = 1
 const MAX_CHANGE_SUMMARY_FILES = 100
+const MAX_REVIEW_MESSAGE_LENGTH = 10 * 1024
+const MAX_REVIEW_METADATA_BYTES = 5 * 1024 * 1024
 const GITHUB_REMOTE_RX =
   /^(?:https:\/\/github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/
 
@@ -59,11 +69,19 @@ function getGitTimeoutMs() {
 }
 
 function getDefaultProxyUrl() {
-  return (
-    (Settings.githubSync && Settings.githubSync.proxyUrl) ||
-    process.env.GITHUB_SYNC_PROXY_URL ||
-    DEFAULT_PROXY_URL
-  )
+  if (
+    Settings.githubSync &&
+    Object.prototype.hasOwnProperty.call(Settings.githubSync, 'proxyUrl')
+  ) {
+    return Settings.githubSync.proxyUrl
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(process.env, 'GITHUB_SYNC_PROXY_URL')
+  ) {
+    return process.env.GITHUB_SYNC_PROXY_URL
+  }
+
+  return DEFAULT_PROXY_URL
 }
 
 function projectIdString(projectId) {
@@ -95,8 +113,8 @@ function normalizeRemoteUrl(remoteUrl) {
 }
 
 function normalizeProxyUrl(proxyUrl) {
-  const value = (proxyUrl || '').trim()
-  if (!value) {
+  const value = (proxyUrl == null ? '' : String(proxyUrl)).trim()
+  if (DISABLED_PROXY_VALUES.has(value.toLowerCase())) {
     return null
   }
 
@@ -569,11 +587,15 @@ async function replaceCheckoutWithProject(projectId, dir) {
   await removeWorktreeFiles(dir)
   const docs = await ProjectEntityHandler.promises.getAllDocs(projectId)
   for (const [projectPath, doc] of Object.entries(docs)) {
+    if (isReviewMetadataProjectPath(projectPath)) {
+      continue
+    }
     await writeWorktreeFile(dir, projectPath, doc.lines.join('\n'))
   }
 
   const files = await ProjectEntityHandler.promises.getAllFiles(projectId)
   for (const [projectPath, file] of Object.entries(files)) {
+    if (isReviewMetadataProjectPath(projectPath)) continue
     const target = await resolveWorktreePath(dir, projectPath)
     await fs.promises.mkdir(path.dirname(target), { recursive: true })
     const { stream } = await HistoryManager.promises.requestBlobWithProjectId(
@@ -582,6 +604,7 @@ async function replaceCheckoutWithProject(projectId, dir) {
     )
     await pipeline(stream, fs.createWriteStream(target))
   }
+  await writeReviewMetadataFile(projectId, dir, docs)
 }
 
 async function replaceProjectFromDirectory({ projectId, userId, sourceDir }) {
@@ -596,10 +619,19 @@ async function replaceProjectFromDirectory({ projectId, userId, sourceDir }) {
   }
 
   const importEntries =
-    await FileSystemImportManager.promises.importDir(sourceDir)
+    (await FileSystemImportManager.promises.importDir(sourceDir)).filter(
+      importEntry => !isReviewMetadataProjectPath(importEntry.projectPath)
+    )
+  const reviewImport = await prepareReviewImport({
+    projectId,
+    userId,
+    sourceDir,
+    importEntries,
+  })
   const { docEntries, fileEntries } = await createEntriesFromImports(
     project,
     importEntries,
+    reviewImport,
   )
 
   const oldEntities = ProjectEntityHandler.getAllEntitiesFromProject(project)
@@ -645,31 +677,36 @@ async function replaceProjectFromDirectory({ projectId, userId, sourceDir }) {
   await cleanupOldDocs(project, oldEntities.docs)
   await ProjectRootDocManager.promises.setRootDocAutomatically(projectId)
   await TpdsProjectFlusher.promises.flushProjectToTpds(projectId)
+  await broadcastImportedReviewThreads(projectId, reviewImport.threadIds)
 
   return {
     docs: docEntries.length,
     files: fileEntries.length,
+    review: reviewImport.summary,
   }
 }
 
-async function createEntriesFromImports(project, importEntries) {
+async function createEntriesFromImports(project, importEntries, reviewImport) {
   const docEntries = []
   const fileEntries = []
   for (const importEntry of importEntries) {
     switch (importEntry.type) {
       case 'doc': {
         const doc = new Doc({ name: path.basename(importEntry.projectPath) })
+        const projectPath = normalizeProjectPath(importEntry.projectPath)
+        const ranges = cloneReviewRangesForPath(reviewImport, projectPath)
         await DocstoreManager.promises.updateDoc(
           project._id.toString(),
           doc._id.toString(),
           importEntry.lines,
           0,
-          {},
+          ranges,
         )
         docEntries.push({
           doc,
           path: importEntry.projectPath,
           docLines: importEntry.lines.join('\n'),
+          ranges,
         })
         break
       }
@@ -700,6 +737,527 @@ async function createEntriesFromImports(project, importEntries) {
     }
   }
   return { docEntries, fileEntries }
+}
+
+async function writeReviewMetadataFile(projectId, dir, docs) {
+  const metadata = await exportReviewMetadata(projectId, docs)
+  if (!hasReviewMetadataContent(metadata)) {
+    return
+  }
+  await writeWorktreeFile(dir, REVIEW_METADATA_PATH, stableJson(metadata))
+}
+
+async function exportReviewMetadata(projectId, docs) {
+  const rangesByDocId = await getReviewRangesByDocId(projectId)
+  const metadata = {
+    version: REVIEW_METADATA_SCHEMA_VERSION,
+    generator: REVIEW_METADATA_GENERATOR,
+    docs: {},
+    threads: {},
+  }
+  const referencedThreadIds = new Set()
+
+  for (const [rawProjectPath, doc] of Object.entries(docs)) {
+    if (isReviewMetadataProjectPath(rawProjectPath)) {
+      continue
+    }
+    const docId = doc._id.toString()
+    const ranges = normalizeReviewRanges(rangesByDocId.get(docId))
+    if (!hasReviewRanges(ranges)) {
+      continue
+    }
+    for (const threadId of collectCommentThreadIds(ranges.comments)) {
+      referencedThreadIds.add(threadId)
+    }
+    const content = doc.lines.join('\n')
+    metadata.docs[normalizeProjectPath(rawProjectPath)] = {
+      contentHash: contentHash(content),
+      ranges,
+    }
+  }
+
+  if (referencedThreadIds.size > 0) {
+    const threads = await ChatApiHandler.promises.getThreads(projectId)
+    for (const threadId of Array.from(referencedThreadIds).sort()) {
+      const thread = normalizeThreadForMetadata(threads[threadId])
+      if (thread.messages.length > 0) {
+        metadata.threads[threadId] = thread
+      }
+    }
+  }
+
+  return metadata
+}
+
+async function getReviewRangesByDocId(projectId) {
+  const rangesByDocId = new Map()
+  for (const doc of await DocstoreManager.promises.getAllRanges(projectId)) {
+    rangesByDocId.set(doc._id.toString(), doc.ranges)
+  }
+  return rangesByDocId
+}
+
+async function prepareReviewImport({ projectId, userId, sourceDir, importEntries }) {
+  const metadata = await readReviewMetadataFile(sourceDir)
+  const summary = emptyReviewImportSummary()
+  const rangesByPath = new Map()
+  if (!metadata) {
+    return { rangesByPath, threadIds: new Set(), summary }
+  }
+
+  const docsByPath = new Map()
+  for (const importEntry of importEntries) {
+    if (importEntry.type === 'doc') {
+      docsByPath.set(normalizeProjectPath(importEntry.projectPath), importEntry)
+    }
+  }
+
+  const referencedThreadIds = new Set()
+  for (const [rawProjectPath, docMetadata] of Object.entries(metadata.docs)) {
+    const projectPath = normalizeProjectPath(rawProjectPath)
+    const importEntry = docsByPath.get(projectPath)
+    if (!importEntry) {
+      continue
+    }
+
+    const content = importEntry.lines.join('\n')
+    const restored = restoreReviewRangesForContent(docMetadata, content)
+    summary.skippedComments += restored.skippedComments
+    summary.skippedChanges += restored.skippedChanges
+
+    const filteredComments = filterRestorableComments(
+      restored.ranges.comments,
+      content,
+      referencedThreadIds
+    )
+    summary.skippedComments +=
+      restored.ranges.comments.length - filteredComments.length
+    restored.ranges.comments = filteredComments
+
+    if (hasReviewRanges(restored.ranges)) {
+      rangesByPath.set(projectPath, restored.ranges)
+    }
+  }
+
+  const validThreadIds = await ensureReviewThreads({
+    projectId,
+    userId,
+    threads: metadata.threads,
+    threadIds: referencedThreadIds,
+  })
+
+  const finalThreadIds = new Set()
+  for (const [projectPath, ranges] of rangesByPath) {
+    const comments = ranges.comments.filter(comment => {
+      if (validThreadIds.has(comment.op.t)) {
+        finalThreadIds.add(comment.op.t)
+        return true
+      }
+      summary.skippedComments += 1
+      return false
+    })
+    ranges.comments = comments
+    if (!hasReviewRanges(ranges)) {
+      rangesByPath.delete(projectPath)
+    }
+  }
+
+  for (const ranges of rangesByPath.values()) {
+    if (hasReviewRanges(ranges)) {
+      summary.docs += 1
+      summary.comments += ranges.comments.length
+      summary.changes += ranges.changes.length
+    }
+  }
+  summary.threads = finalThreadIds.size
+
+  return { rangesByPath, threadIds: finalThreadIds, summary }
+}
+
+async function readReviewMetadataFile(sourceDir) {
+  const target = path.join(sourceDir, REVIEW_METADATA_PATH)
+  let stat
+  try {
+    stat = await fs.promises.stat(target)
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null
+    }
+    throw error
+  }
+  if (!stat.isFile() || stat.size > MAX_REVIEW_METADATA_BYTES) {
+    logger.warn(
+      { path: REVIEW_METADATA_PATH, size: stat.size },
+      'ignoring invalid github sync review metadata file'
+    )
+    return null
+  }
+
+  try {
+    const metadata = JSON.parse(await fs.promises.readFile(target, 'utf8'))
+    if (
+      !isPlainObject(metadata) ||
+      metadata.version !== REVIEW_METADATA_SCHEMA_VERSION ||
+      !isPlainObject(metadata.docs)
+    ) {
+      logger.warn(
+        { path: REVIEW_METADATA_PATH, version: metadata && metadata.version },
+        'ignoring unsupported github sync review metadata file'
+      )
+      return null
+    }
+    return {
+      docs: metadata.docs,
+      threads: isPlainObject(metadata.threads) ? metadata.threads : {},
+    }
+  } catch (error) {
+    logger.warn(
+      { err: error, path: REVIEW_METADATA_PATH },
+      'ignoring malformed github sync review metadata file'
+    )
+    return null
+  }
+}
+
+async function ensureReviewThreads({ projectId, userId, threads, threadIds }) {
+  if (threadIds.size === 0) {
+    return new Set()
+  }
+
+  const normalizedUserId = normalizeObjectIdString(userId)
+  const requestedThreadIds = Array.from(threadIds).sort()
+  const existingThreads = await ChatApiHandler.promises.generateThreadData(
+    projectId,
+    requestedThreadIds
+  )
+  const validThreadIds = new Set(Object.keys(existingThreads))
+
+  for (const threadId of requestedThreadIds) {
+    if (validThreadIds.has(threadId)) {
+      continue
+    }
+
+    const thread = normalizeThreadForMetadata(threads[threadId])
+    let messagesCreated = 0
+    for (const message of thread.messages) {
+      const messageUserId =
+        normalizeObjectIdString(message.user_id) || normalizedUserId
+      if (!messageUserId) {
+        continue
+      }
+      await ChatApiHandler.promises.sendComment(
+        projectId,
+        threadId,
+        messageUserId,
+        message.content
+      )
+      messagesCreated += 1
+    }
+    if (messagesCreated > 0) {
+      validThreadIds.add(threadId)
+    }
+  }
+
+  for (const threadId of validThreadIds) {
+    const thread = normalizeThreadForMetadata(threads[threadId])
+    if (thread.resolved) {
+      await ChatApiHandler.promises.resolveThread(
+        projectId,
+        threadId,
+        thread.resolved_by_user_id || normalizedUserId
+      )
+    } else if (threads[threadId]) {
+      await ChatApiHandler.promises.reopenThread(projectId, threadId)
+    }
+  }
+
+  return validThreadIds
+}
+
+async function broadcastImportedReviewThreads(projectId, threadIds) {
+  if (!threadIds || threadIds.size === 0) {
+    return
+  }
+  try {
+    const threadData = await ChatApiHandler.promises.generateThreadData(
+      projectId,
+      Array.from(threadIds)
+    )
+    await ChatManager.promises.injectUserInfoIntoThreads(threadData)
+    EditorRealTimeController.emitToRoom(
+      projectId,
+      'new-comment-threads',
+      threadData
+    )
+  } catch (error) {
+    logger.warn(
+      { err: error, projectId },
+      'failed to broadcast imported github sync review threads'
+    )
+  }
+}
+
+function restoreReviewRangesForContent(docMetadata, content) {
+  const ranges = normalizeReviewRanges(docMetadata && docMetadata.ranges)
+  if (docMetadata && docMetadata.contentHash === contentHash(content)) {
+    return { ranges, skippedComments: 0, skippedChanges: 0 }
+  }
+
+  const remappedComments = remapCommentRanges(ranges.comments, content)
+  return {
+    ranges: {
+      comments: remappedComments.comments,
+      changes: [],
+    },
+    skippedComments: remappedComments.skipped,
+    skippedChanges: ranges.changes.length,
+  }
+}
+
+function remapCommentRanges(comments, content) {
+  const remapped = []
+  let skipped = 0
+
+  for (const comment of comments) {
+    const next = cloneJson(comment)
+    if (!isPlainObject(next.op) || !Number.isInteger(next.op.p)) {
+      skipped += 1
+      continue
+    }
+    const selectedText = typeof next.op.c === 'string' ? next.op.c : ''
+    if (!selectedText) {
+      if (next.op.p <= content.length) {
+        remapped.push(next)
+      } else {
+        skipped += 1
+      }
+      continue
+    }
+
+    const newPosition = findClosestTextPosition(content, selectedText, next.op.p)
+    if (newPosition == null) {
+      skipped += 1
+      continue
+    }
+    next.op.p = newPosition
+    remapped.push(next)
+  }
+
+  return { comments: remapped, skipped }
+}
+
+function findClosestTextPosition(content, selectedText, oldPosition) {
+  const positions = []
+  let position = content.indexOf(selectedText)
+  while (position !== -1) {
+    positions.push(position)
+    if (positions.length > 1000) {
+      return null
+    }
+    position = content.indexOf(selectedText, position + 1)
+  }
+  if (positions.length === 0) {
+    return null
+  }
+
+  let closest = null
+  let closestDistance = Infinity
+  let ambiguous = false
+  for (const candidate of positions) {
+    const distance = Math.abs(candidate - oldPosition)
+    if (distance < closestDistance) {
+      closest = candidate
+      closestDistance = distance
+      ambiguous = false
+    } else if (distance === closestDistance) {
+      ambiguous = true
+    }
+  }
+  return ambiguous ? null : closest
+}
+
+function filterRestorableComments(comments, content, referencedThreadIds) {
+  const filtered = []
+  for (const comment of comments) {
+    const normalizedComment = normalizeCommentRange(comment, content)
+    if (!normalizedComment) {
+      continue
+    }
+    referencedThreadIds.add(normalizedComment.op.t)
+    filtered.push(normalizedComment)
+  }
+  return filtered
+}
+
+function normalizeCommentRange(comment, content) {
+  if (!isPlainObject(comment) || !isPlainObject(comment.op)) {
+    return null
+  }
+  const threadId = normalizeObjectIdString(comment.op.t || comment.id)
+  if (!threadId) {
+    return null
+  }
+  const position = comment.op.p
+  if (!Number.isInteger(position) || position < 0) {
+    return null
+  }
+  const selectedText = typeof comment.op.c === 'string' ? comment.op.c : ''
+  if (position + selectedText.length > content.length) {
+    return null
+  }
+
+  const normalizedComment = cloneJson(comment)
+  normalizedComment.id = threadId
+  normalizedComment.op.t = threadId
+  normalizedComment.op.p = position
+  normalizedComment.op.c = selectedText
+  return normalizedComment
+}
+
+function normalizeThreadForMetadata(thread) {
+  const normalizedThread = { messages: [] }
+  if (!isPlainObject(thread)) {
+    return normalizedThread
+  }
+
+  for (const message of Array.isArray(thread.messages) ? thread.messages : []) {
+    if (
+      !isPlainObject(message) ||
+      typeof message.content !== 'string' ||
+      !message.content ||
+      message.content.length > MAX_REVIEW_MESSAGE_LENGTH
+    ) {
+      continue
+    }
+    const messageUserId = normalizeObjectIdString(message.user_id)
+    const normalizedMessage = {
+      content: message.content,
+      user_id: messageUserId,
+    }
+    if (message.id != null) {
+      normalizedMessage.id = message.id.toString()
+    }
+    if (message.timestamp != null) {
+      normalizedMessage.timestamp = message.timestamp
+    }
+    if (message.edited_at != null) {
+      normalizedMessage.edited_at = message.edited_at
+    }
+    normalizedThread.messages.push(normalizedMessage)
+  }
+
+  if (thread.resolved) {
+    normalizedThread.resolved = true
+    const resolvedByUserId = normalizeObjectIdString(thread.resolved_by_user_id)
+    if (resolvedByUserId) {
+      normalizedThread.resolved_by_user_id = resolvedByUserId
+    }
+    if (thread.resolved_at != null) {
+      normalizedThread.resolved_at = thread.resolved_at
+    }
+  }
+  return normalizedThread
+}
+
+function collectCommentThreadIds(comments) {
+  const threadIds = new Set()
+  for (const comment of comments) {
+    const commentOp = comment && comment.op
+    const threadId = normalizeObjectIdString(
+      (commentOp && commentOp.t) || (comment && comment.id)
+    )
+    if (threadId) {
+      threadIds.add(threadId)
+    }
+  }
+  return threadIds
+}
+
+function cloneReviewRangesForPath(reviewImport, projectPath) {
+  return cloneJson(
+    reviewImport && reviewImport.rangesByPath
+      ? reviewImport.rangesByPath.get(projectPath) || emptyReviewRanges()
+      : emptyReviewRanges()
+  )
+}
+
+function normalizeReviewRanges(ranges) {
+  if (!isPlainObject(ranges)) {
+    return emptyReviewRanges()
+  }
+  return {
+    comments: Array.isArray(ranges.comments) ? cloneJson(ranges.comments) : [],
+    changes: Array.isArray(ranges.changes) ? cloneJson(ranges.changes) : [],
+  }
+}
+
+function hasReviewRanges(ranges) {
+  return ranges.comments.length > 0 || ranges.changes.length > 0
+}
+
+function hasReviewMetadataContent(metadata) {
+  return Object.keys(metadata.docs).length > 0
+}
+
+function emptyReviewRanges() {
+  return { comments: [], changes: [] }
+}
+
+function emptyReviewImportSummary() {
+  return {
+    docs: 0,
+    comments: 0,
+    changes: 0,
+    threads: 0,
+    skippedComments: 0,
+    skippedChanges: 0,
+  }
+}
+
+function normalizeProjectPath(projectPath) {
+  return `/${projectPath.toString().replace(/^\/+/, '')}`
+}
+
+function isReviewMetadataProjectPath(projectPath) {
+  return projectPath.toString().replace(/^\/+/, '') === REVIEW_METADATA_PATH
+}
+
+function normalizeObjectIdString(value) {
+  if (value == null) {
+    return null
+  }
+  const objectId = value.toString()
+  return ObjectId.isValid(objectId) ? objectId : null
+}
+
+function contentHash(content) {
+  return crypto.createHash('sha256').update(content).digest('hex')
+}
+
+function stableJson(value) {
+  return `${JSON.stringify(sortJson(value), null, 2)}\n`
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortJson)
+  }
+  if (!isPlainObject(value)) {
+    return value
+  }
+  const sorted = {}
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortJson(value[key])
+  }
+  return sorted
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
+function isPlainObject(value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
 async function cleanupOldDocs(project, docs) {
