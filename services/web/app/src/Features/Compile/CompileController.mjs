@@ -24,6 +24,7 @@ import {
 import Features from '../../infrastructure/Features.mjs'
 import ClsiCacheController from './ClsiCacheController.mjs'
 import { prepareZipAttachment } from '../../infrastructure/Response.mjs'
+import UserWatermarkManager from './UserWatermarkManager.mjs'
 
 const { z, zz, parseReq } = Validation
 const ClsiCookieManager = ClsiCookieManagerFactory(
@@ -246,11 +247,15 @@ const _CompileController = {
       ? getOutputFilesArchiveSpecification(projectId, userId, buildId)
       : null
 
+    const pdfWatermark =
+      await UserWatermarkManager.promises.getCompileResponseData(projectId, req)
     res.json({
       status,
       outputFiles,
       outputFilesArchive,
       compileGroup: limits?.compileGroup,
+      userWatermarkEnabled: pdfWatermark.userWatermarkEnabled,
+      canDownloadUnwatermarkedPdf: pdfWatermark.canDownloadUnwatermarkedPdf,
       clsiServerId,
       clsiCacheShard,
       validationProblems,
@@ -616,6 +621,24 @@ const _CompileController = {
     const ac = new AbortController()
     let timeout = setTimeout(() => ac.abort(), 10_000)
     try {
+      const watermarkRequest =
+        await UserWatermarkManager.promises.getPdfWatermarkRequest({
+          projectId,
+          action,
+          requestPath,
+          req,
+        })
+      if (watermarkRequest.denyUnwatermarked) {
+        Metrics.inc('proxy_to_clsi', 1, {
+          path: action,
+          status: 'watermark-forbidden',
+        })
+        timer.labels.status = 'watermark-forbidden'
+        timer.done()
+        res.sendStatus(403)
+        return
+      }
+
       const { stream, response } = await fetchStreamWithResponse(url.href, {
         method: req.method,
         signal: ac.signal,
@@ -636,6 +659,9 @@ const _CompileController = {
       })
 
       for (const key of ['Content-Length', 'Content-Type']) {
+        if (watermarkRequest.shouldWatermark && key === 'Content-Length') {
+          continue
+        }
         if (response.headers.has(key)) {
           res.setHeader(key, response.headers.get(key))
         }
@@ -650,8 +676,17 @@ const _CompileController = {
       // Disable buffering in nginx
       res.setHeader('X-Accel-Buffering', 'no')
 
-      res.writeHead(response.status)
-      await pipeline(stream, res)
+      if (watermarkRequest.shouldWatermark && response.status === 200) {
+        res.setHeader('Content-Type', 'application/pdf')
+        await UserWatermarkManager.promises.streamWatermarkedPdf(
+          stream,
+          res,
+          watermarkRequest
+        )
+      } else {
+        res.writeHead(response.status)
+        await pipeline(stream, res)
+      }
       timer.labels.status = 'success'
       timer.done()
     } catch (err) {

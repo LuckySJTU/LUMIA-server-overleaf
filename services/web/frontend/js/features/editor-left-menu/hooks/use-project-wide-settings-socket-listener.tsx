@@ -35,6 +35,17 @@ export default function useProjectWideSettingsSocketListener() {
     [project, updateProject]
   )
 
+  const setUserWatermarkEnabled = useCallback(
+    (payload: { userWatermarkEnabled?: boolean }) => {
+      if (project && typeof payload.userWatermarkEnabled === 'boolean') {
+        updateProject({
+          userWatermarkEnabled: payload.userWatermarkEnabled,
+        })
+      }
+    },
+    [project, updateProject]
+  )
+
   useEffect(() => {
     // data is not available on initial mounting
     const dataAvailable = !!project
@@ -43,6 +54,10 @@ export default function useProjectWideSettingsSocketListener() {
       socket.on('compilerUpdated', setCompiler)
       socket.on('imageNameUpdated', setImageName)
       socket.on('spellCheckLanguageUpdated', setSpellCheckLanguage)
+      socket.on(
+        'project:userWatermarkEnabled:changed',
+        setUserWatermarkEnabled
+      )
       return () => {
         socket.removeListener('compilerUpdated', setCompiler)
         socket.removeListener('imageNameUpdated', setImageName)
@@ -50,7 +65,18 @@ export default function useProjectWideSettingsSocketListener() {
           'spellCheckLanguageUpdated',
           setSpellCheckLanguage
         )
+        socket.removeListener(
+          'project:userWatermarkEnabled:changed',
+          setUserWatermarkEnabled
+        )
       }
     }
-  }, [socket, project, setCompiler, setImageName, setSpellCheckLanguage])
+  }, [
+    socket,
+    project,
+    setCompiler,
+    setImageName,
+    setSpellCheckLanguage,
+    setUserWatermarkEnabled,
+  ])
 }

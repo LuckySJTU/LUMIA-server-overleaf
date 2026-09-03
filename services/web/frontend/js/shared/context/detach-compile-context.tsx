@@ -421,6 +421,7 @@ export const DetachCompileProvider: FC<React.PropsWithChildren> = ({
       logEntryAnnotations,
       logEntries,
       pdfDownloadUrl: pdfFile?.pdfDownloadUrl,
+      pdfUnwatermarkedDownloadUrl: pdfFile?.pdfUnwatermarkedDownloadUrl,
       pdfFile,
       pdfUrl: pdfFile?.pdfUrl,
       pdfViewer,

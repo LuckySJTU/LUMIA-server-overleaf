@@ -90,6 +90,12 @@ const ProjectOptionsHandler = {
     return Project.updateOne(conditions, update, {})
   },
 
+  async setUserWatermarkEnabled(projectId, enabled) {
+    const conditions = { _id: projectId }
+    const update = { userWatermarkEnabled: Boolean(enabled) }
+    return Project.updateOne(conditions, update, {})
+  },
+
   async setHistoryRangesSupport(projectId, enabled) {
     const conditions = { _id: new ObjectId(projectId) }
     const update = {
@@ -125,6 +131,9 @@ export default {
   setBrandVariationId: callbackify(ProjectOptionsHandler.setBrandVariationId),
   unsetBrandVariationId: callbackify(
     ProjectOptionsHandler.unsetBrandVariationId
+  ),
+  setUserWatermarkEnabled: callbackify(
+    ProjectOptionsHandler.setUserWatermarkEnabled
   ),
   setHistoryRangesSupport: callbackify(
     ProjectOptionsHandler.setHistoryRangesSupport

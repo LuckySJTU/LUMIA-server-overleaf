@@ -26,6 +26,7 @@ export default ProjectEditorHandler = {
       compiler: project.compiler,
       description: project.description,
       spellCheckLanguage: project.spellCheckLanguage,
+      userWatermarkEnabled: Boolean(project.userWatermarkEnabled),
       deletedByExternalDataSource: project.deletedByExternalDataSource || false,
       imageName:
         project.imageName != null

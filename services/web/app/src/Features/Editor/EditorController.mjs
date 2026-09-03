@@ -623,6 +623,24 @@ const EditorController = {
     )
   },
 
+  setUserWatermarkEnabled(projectId, enabled, callback) {
+    ProjectOptionsHandler.setUserWatermarkEnabled(
+      projectId,
+      enabled,
+      function (err) {
+        if (err) {
+          return callback(err)
+        }
+        EditorRealTimeController.emitToRoom(
+          projectId,
+          'project:userWatermarkEnabled:changed',
+          { userWatermarkEnabled: Boolean(enabled) }
+        )
+        callback()
+      }
+    )
+  },
+
   setRootDoc(projectId, newRootDocID, callback) {
     ProjectEntityUpdateHandler.setRootDoc(
       projectId,
@@ -719,6 +737,9 @@ EditorController.promises = {
   setImageName: promisify(EditorController.setImageName),
   setSpellCheckLanguage: promisify(EditorController.setSpellCheckLanguage),
   setPublicAccessLevel: promisify(EditorController.setPublicAccessLevel),
+  setUserWatermarkEnabled: promisify(
+    EditorController.setUserWatermarkEnabled
+  ),
   setRootDoc: promisify(EditorController.setRootDoc),
   setMainBibliographyDoc: promisify(EditorController.setMainBibliographyDoc),
 }

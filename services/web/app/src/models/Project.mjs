@@ -45,6 +45,7 @@ export const ProjectSchema = new Schema(
     deletedDocs: [DeletedDocSchema],
     imageName: { type: String },
     brandVariationId: { type: String },
+    userWatermarkEnabled: { type: Boolean, default: false },
     track_changes: { type: Object },
     tokens: {
       readOnly: {

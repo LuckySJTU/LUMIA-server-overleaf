@@ -304,6 +304,9 @@ export function generatePdfCachingTransportFactory() {
       // Be trigger-happy here until we reached a stable state of the feature.
       return undefined
     }
+    if (usesDownloadProxy(url)) {
+      return undefined
+    }
     // Latency is collected per preview cycle.
     metrics.latencyComputeMax = 0
     metrics.latencyComputeTotal = 0
@@ -313,5 +316,15 @@ export function generatePdfCachingTransportFactory() {
       abortController,
       handleFetchError,
     })
+  }
+}
+
+function usesDownloadProxy(url: string) {
+  try {
+    return new URL(url, window.location.origin).pathname.startsWith(
+      '/download/project/'
+    )
+  } catch {
+    return false
   }
 }

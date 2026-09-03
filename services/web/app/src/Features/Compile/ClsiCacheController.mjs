@@ -13,6 +13,7 @@ import ClsiCacheHandler from './ClsiCacheHandler.mjs'
 import ProjectGetter from '../Project/ProjectGetter.mjs'
 import { MeteredStream } from '@overleaf/stream-utils'
 import Metrics from '@overleaf/metrics'
+import UserWatermarkManager from './UserWatermarkManager.mjs'
 
 /**
  * Download a file from a specific build on the clsi-cache.
@@ -53,6 +54,18 @@ async function _downloadFromCacheWithParams(
   filename
 ) {
   const userId = CompileController._getUserIdForCompile(req)
+  const watermarkRequest =
+    await UserWatermarkManager.promises.getPdfWatermarkRequest({
+      projectId,
+      action: 'output-file',
+      requestPath: `/project/${projectId}/build/${buildId}/output/${filename}`,
+      req,
+    })
+  if (watermarkRequest.denyUnwatermarked) {
+    res.sendStatus(403)
+    return
+  }
+
   const ac = new AbortController()
   let timer = setTimeout(() => ac.abort(), 10_000)
   let location, projectName
@@ -93,14 +106,22 @@ async function _downloadFromCacheWithParams(
   }
 
   for (const key of ['Content-Length', 'Content-Type']) {
+    if (watermarkRequest.shouldWatermark && key === 'Content-Length') {
+      continue
+    }
     if (response.headers.has(key)) res.setHeader(key, response.headers.get(key))
   }
   const ext = Path.extname(filename)
-  res.attachment(
+  const downloadFilename =
     ext === '.pdf'
       ? `${CompileController._getSafeProjectName({ name: projectName })}.pdf`
       : filename
-  )
+  if (ext === '.pdf' && !req.query.popupDownload) {
+    res.contentType('application/pdf')
+    res.setContentDisposition('inline', { filename: downloadFilename })
+  } else {
+    res.attachment(downloadFilename)
+  }
   // Downloads can take a while on a slow connection, increase timeouts to 10min
   const TEN_MINUTES_IN_MS = 10 * 60 * 1000
   res.setTimeout(TEN_MINUTES_IN_MS)
@@ -110,14 +131,23 @@ async function _downloadFromCacheWithParams(
   res.setHeader('X-Accel-Buffering', 'no')
 
   try {
-    res.writeHead(response.status)
-    await pipeline(
-      stream,
-      new MeteredStream(Metrics, 'clsi_cache_egress', {
-        path: ClsiCacheHandler.getEgressLabel(filename),
-      }),
-      res
-    )
+    if (watermarkRequest.shouldWatermark && response.status === 200) {
+      res.setHeader('Content-Type', 'application/pdf')
+      await UserWatermarkManager.promises.streamWatermarkedPdf(
+        stream,
+        res,
+        watermarkRequest
+      )
+    } else {
+      res.writeHead(response.status)
+      await pipeline(
+        stream,
+        new MeteredStream(Metrics, 'clsi_cache_egress', {
+          path: ClsiCacheHandler.getEgressLabel(filename),
+        }),
+        res
+      )
+    }
   } catch (err) {
     const reqAborted = Boolean(req.destroyed)
     const streamingStarted = Boolean(res.headersSent)
@@ -178,6 +208,8 @@ async function getLatestBuildFromCache(req, res) {
     let { pdfCachingMinChunkSize, pdfDownloadDomain } =
       await CompileController._getSplitTestOptions(req, res)
     pdfDownloadDomain += `/zone/${zone}`
+    const pdfWatermark =
+      await UserWatermarkManager.promises.getCompileResponseData(projectId, req)
     res.json({
       fromCache: true,
       status: 'success',
@@ -186,6 +218,8 @@ async function getLatestBuildFromCache(req, res) {
       clsiServerId,
       clsiCacheShard,
       pdfDownloadDomain,
+      userWatermarkEnabled: pdfWatermark.userWatermarkEnabled,
+      canDownloadUnwatermarkedPdf: pdfWatermark.canDownloadUnwatermarkedPdf,
       pdfCachingMinChunkSize,
       options,
       stats,

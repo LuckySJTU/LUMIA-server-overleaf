@@ -31,6 +31,7 @@ type PDFFileBase = OutputFileBase & {
   editorId: string
   pdfDownloadUrl: string
   pdfUrl: string
+  pdfUnwatermarkedDownloadUrl?: string
   size: number
   startXRefTable?: number
 }
@@ -73,6 +74,8 @@ export type CompileResponseData = {
   timings?: Record<string, number>
   outputFilesArchive?: CompileOutputFile
 
+  userWatermarkEnabled?: boolean
+  canDownloadUnwatermarkedPdf?: boolean
   // assigned on response body by DocumentCompiler in frontend
   rootDocId?: string | null
   options: CompileOptions

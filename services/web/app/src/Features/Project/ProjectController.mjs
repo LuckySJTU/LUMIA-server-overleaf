@@ -74,6 +74,7 @@ const updateProjectAdminSettingsSchema = z.object({
         'unexpected access level'
       )
       .optional(),
+    userWatermarkEnabled: z.boolean().optional(),
   }),
 })
 
@@ -143,16 +144,17 @@ const _ProjectController = {
     const { params, body } = parseReq(req, updateProjectAdminSettingsSchema)
     const projectId = params.Project_id
     const user = SessionManager.getSessionUser(req.session)
-    if (!Features.hasFeature('link-sharing')) {
-      return res.sendStatus(403) // return Forbidden if link sharing is not enabled
-    }
+    let settingsChanged = false
 
     if (body.publicAccessLevel != null) {
+      if (!Features.hasFeature('link-sharing')) {
+        return res.sendStatus(403) // return Forbidden if link sharing is not enabled
+      }
+
       await EditorController.promises.setPublicAccessLevel(
         projectId,
         body.publicAccessLevel
       )
-
       await ProjectAuditLogHandler.promises.addEntry(
         projectId,
         'toggle-access-level',
@@ -160,10 +162,28 @@ const _ProjectController = {
         req.ip,
         { publicAccessLevel: body.publicAccessLevel, status: 'OK' }
       )
-      res.sendStatus(204)
-    } else {
-      res.sendStatus(500)
+      settingsChanged = true
     }
+
+    if (body.userWatermarkEnabled != null) {
+      await EditorController.promises.setUserWatermarkEnabled(
+        projectId,
+        body.userWatermarkEnabled
+      )
+      await ProjectAuditLogHandler.promises.addEntry(
+        projectId,
+        'toggle-user-watermark',
+        user._id,
+        req.ip,
+        { userWatermarkEnabled: body.userWatermarkEnabled, status: 'OK' }
+      )
+      settingsChanged = true
+    }
+
+    if (!settingsChanged) {
+      return res.sendStatus(400)
+    }
+    res.sendStatus(204)
   },
 
   async deleteProject(req, res) {
@@ -554,6 +574,7 @@ const _ProjectController = {
           track_changes: 1,
           owner_ref: 1,
           brandVariationId: 1,
+          userWatermarkEnabled: 1,
           overleaf: 1,
           tokens: 1,
           tokenAccessReadAndWrite_refs: 1, // used for link sharing analytics

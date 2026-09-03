@@ -32,6 +32,7 @@ export interface ProjectMetadata extends ProjectSettings {
     github?: boolean
   }
   publicAccessLevel?: PublicAccessLevel
+  userWatermarkEnabled?: boolean
   owner: {
     _id: UserId
     email: string

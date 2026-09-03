@@ -45,16 +45,34 @@ export function handleOutputFiles(
     params.set('enable_pdf_caching', 'true')
   }
 
-  outputFile.pdfUrl = `${buildURL(outputFile, data.pdfDownloadDomain)}?${params}`
+  const downloadParams = new URLSearchParams(params)
+  downloadParams.set('popupDownload', 'true') // save PDF download as file
+  downloadParams.set('editorId', outputFile.editorId)
 
-  if (data.fromCache) {
+  const proxiedPdfDownloadPath = data.fromCache
+    ? outputFile.downloadURL
+    : `/download/project/${projectId}/build/${outputFile.build}/output/output.pdf`
+
+  if (data.userWatermarkEnabled) {
+    outputFile.pdfUrl = `${proxiedPdfDownloadPath}?${params}`
+  } else {
+    outputFile.pdfUrl = `${buildURL(
+      outputFile,
+      data.pdfDownloadDomain
+    )}?${params}`
+  }
+
+  if (data.fromCache && !data.userWatermarkEnabled) {
     outputFile.pdfDownloadUrl = outputFile.downloadURL
   } else {
-    // build the URL for downloading the PDF
-    params.set('popupDownload', 'true') // save PDF download as file
-    params.set('editorId', outputFile.editorId)
+    outputFile.pdfDownloadUrl = `${proxiedPdfDownloadPath}?${downloadParams}`
+  }
 
-    outputFile.pdfDownloadUrl = `/download/project/${projectId}/build/${outputFile.build}/output/output.pdf?${params}`
+  if (data.canDownloadUnwatermarkedPdf) {
+    const unwatermarkedParams = new URLSearchParams(downloadParams)
+    unwatermarkedParams.set('unwatermarked', '1')
+    outputFile.pdfUnwatermarkedDownloadUrl =
+      `${proxiedPdfDownloadPath}?${unwatermarkedParams}`
   }
 
   return outputFile

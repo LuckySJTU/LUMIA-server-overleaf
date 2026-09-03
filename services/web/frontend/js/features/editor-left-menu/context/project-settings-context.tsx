@@ -2,13 +2,14 @@ import { createContext, FC, useContext, useMemo } from 'react'
 import useProjectWideSettings from '../hooks/use-project-wide-settings'
 import useUserWideSettings from '../hooks/use-user-wide-settings'
 import useProjectWideSettingsSocketListener from '../hooks/use-project-wide-settings-socket-listener'
-import type { ProjectSettings } from '../utils/api'
+import type { ProjectAdminSettings, ProjectSettings } from '../utils/api'
 import { UserSettings } from '../../../../../types/user-settings'
 
 type ProjectSettingsSetterContextValue = {
   setCompiler: (compiler: ProjectSettings['compiler']) => Promise<void>
   setImageName: (imageName: ProjectSettings['imageName']) => Promise<void>
   setRootDocId: (rootDocId: ProjectSettings['rootDocId']) => void
+  setUserWatermarkEnabled: (enabled: boolean) => Promise<void>
   setSpellCheckLanguage: (
     spellCheckLanguage: ProjectSettings['spellCheckLanguage']
   ) => void
@@ -36,6 +37,7 @@ type ProjectSettingsSetterContextValue = {
 }
 
 type ProjectSettingsContextValue = Partial<ProjectSettings> &
+  Partial<ProjectAdminSettings> &
   Partial<UserSettings> &
   ProjectSettingsSetterContextValue
 
@@ -53,6 +55,8 @@ export const ProjectSettingsProvider: FC<React.PropsWithChildren> = ({
     setImageName,
     rootDocId,
     setRootDocId,
+    userWatermarkEnabled,
+    setUserWatermarkEnabled,
     spellCheckLanguage,
     setSpellCheckLanguage,
   } = useProjectWideSettings()
@@ -99,6 +103,8 @@ export const ProjectSettingsProvider: FC<React.PropsWithChildren> = ({
       imageName,
       setImageName,
       rootDocId,
+      userWatermarkEnabled,
+      setUserWatermarkEnabled,
       setRootDocId,
       spellCheckLanguage,
       setSpellCheckLanguage,
@@ -139,6 +145,8 @@ export const ProjectSettingsProvider: FC<React.PropsWithChildren> = ({
       imageName,
       setImageName,
       rootDocId,
+      userWatermarkEnabled,
+      setUserWatermarkEnabled,
       setRootDocId,
       spellCheckLanguage,
       setSpellCheckLanguage,

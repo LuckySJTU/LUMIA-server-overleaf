@@ -22,6 +22,7 @@ export type Project = {
   features: Record<string, unknown>
   publicAccesLevel?: string
   tokens: Record<string, unknown>
+  userWatermarkEnabled?: boolean
   owner: MongoUser
   members: ProjectMember[]
   invites: ProjectInvite[]

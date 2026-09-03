@@ -12,6 +12,10 @@ export interface ProjectSettings {
   name: string
 }
 
+export interface ProjectAdminSettings {
+  userWatermarkEnabled: boolean
+}
+
 type SaveUserSettings = Partial<
   UserSettings & {
     spellCheckLanguage: ProjectSettings['spellCheckLanguage']
@@ -42,5 +46,14 @@ export const saveProjectSettings = async (
     body: {
       ...data,
     },
+  })
+}
+
+export const saveProjectAdminSettings = async (
+  projectId: string,
+  data: Partial<ProjectAdminSettings>
+) => {
+  await postJSON<never>(`/project/${projectId}/settings/admin`, {
+    body: data,
   })
 }

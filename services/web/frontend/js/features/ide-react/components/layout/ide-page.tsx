@@ -14,6 +14,7 @@ import useThemedPage from '@/shared/hooks/use-themed-page'
 
 import MainLayout from '@/features/ide-react/components/layout/main-layout'
 import SettingsModalNew from '@/features/settings/components/settings-modal'
+import UserWatermarkOverlay from '@/features/ide-react/components/layout/user-watermark-overlay'
 
 export default function IdePage() {
   useLayoutEventTracking() // sent event when the layout changes
@@ -33,6 +34,7 @@ export default function IdePage() {
       <SettingsModalNew />
       <MainLayout />
       <GlobalToasts />
+      <UserWatermarkOverlay />
       {showEditorSurvey && <EditorSurvey />}
     </GlobalAlertsProvider>
   )

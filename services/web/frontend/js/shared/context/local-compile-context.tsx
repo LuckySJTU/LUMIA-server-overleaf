@@ -85,6 +85,7 @@ export type CompileContext = {
   logEntryAnnotations?: Record<string, Annotation[]>
   outputFilesArchive?: string
   pdfDownloadUrl?: string
+  pdfUnwatermarkedDownloadUrl?: string
   pdfFile?: PdfFile | null
   pdfUrl?: string
   pdfViewer?: string
@@ -775,6 +776,7 @@ export const LocalCompileProvider: FC<React.PropsWithChildren> = ({
       logEntryAnnotations,
       logEntries,
       pdfDownloadUrl: pdfFile?.pdfDownloadUrl,
+      pdfUnwatermarkedDownloadUrl: pdfFile?.pdfUnwatermarkedDownloadUrl,
       pdfFile,
       pdfUrl: pdfFile?.pdfUrl,
       pdfViewer,
