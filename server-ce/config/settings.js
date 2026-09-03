@@ -217,6 +217,19 @@ const settings = {
       process.env.OVERLEAF_SESSION_SECRET || process.env.CRYPTO_RANDOM,
   },
 
+  userWatermark: {
+    forensic: {
+      enabled: process.env.USER_WATERMARK_FORENSIC_ENABLED !== 'false',
+      exportLogPath:
+        process.env.USER_WATERMARK_EXPORT_LOG_PATH ||
+        Path.join(DATA_DIR, 'user-watermark-exports.jsonl'),
+      fingerprintSecret:
+        process.env.USER_WATERMARK_FINGERPRINT_SECRET ||
+        process.env.OVERLEAF_SESSION_SECRET ||
+        process.env.CRYPTO_RANDOM,
+    },
+  },
+
   csp: {
     enabled: process.env.OVERLEAF_CSP_ENABLED !== 'false',
   },

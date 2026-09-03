@@ -1,4 +1,5 @@
 import { createReadStream, createWriteStream } from 'node:fs'
+import { createHmac, randomBytes } from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import Path from 'node:path'
@@ -6,6 +7,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { pipeline } from 'node:stream/promises'
 import logger from '@overleaf/logger'
+import Settings from '@overleaf/settings'
 import AuthorizationManager from '../Authorization/AuthorizationManager.mjs'
 import ProjectGetter from '../Project/ProjectGetter.mjs'
 import SessionManager from '../Authentication/SessionManager.mjs'
@@ -18,6 +20,12 @@ const MAX_PROCESS_OUTPUT_BUFFER_BYTES = 4 * 1024 * 1024
 const PROCESS_TIMEOUT_MS = 60 * 1000
 const HIDDEN_WATERMARK_ANNOTATION_FLAGS = 3
 const QPDF_EXIT_CODE_WARNINGS = 3
+const FORENSIC_WATERMARK_VERSION = 1
+const DEFAULT_FORENSIC_EXPORT_LOG_PATH =
+  '/var/lib/overleaf/data/user-watermark-exports.jsonl'
+const FORENSIC_EXPORT_LOG_FILE_MODE = 0o600
+const PROCESS_FALLBACK_FINGERPRINT_SECRET = randomBytes(32).toString('hex')
+let warnedAboutFallbackFingerprintSecret = false
 
 async function isEnabledForProject(projectId) {
   const project = await ProjectGetter.promises.getProject(projectId, {
@@ -68,12 +76,18 @@ async function getPdfWatermarkRequest({ projectId, action, requestPath, req }) {
     }
   }
 
+  const forensicWatermark = buildForensicWatermark(req, projectId)
   return {
     enabled: true,
     shouldWatermark: true,
     denyUnwatermarked: false,
     lines: buildWatermarkLines(req),
-    invisibleText: buildInvisibleWatermarkText(req, projectId),
+    invisibleText: buildInvisibleWatermarkText(
+      req,
+      projectId,
+      forensicWatermark
+    ),
+    forensicWatermark,
   }
 }
 
@@ -110,18 +124,61 @@ async function canUserManageProjectWatermark(req, projectId) {
 }
 
 function buildWatermarkLines(req) {
-  const userId = SessionManager.getLoggedInUserId(req.session)
+  const userId = getRequestUserId(req)
   return ['LUMIA Internal', `User ID: ${userId || 'anonymous'}`]
 }
 
-function buildInvisibleWatermarkText(req, projectId) {
-  const userId = SessionManager.getLoggedInUserId(req.session)
-  return [
+function buildInvisibleWatermarkText(req, projectId, forensicWatermark) {
+  const userId = getRequestUserId(req)
+  const generatedAt = forensicWatermark
+    ? forensicWatermark.generatedAt
+    : new Date().toISOString()
+  const parts = [
     'LUMIA Internal Invisible Watermark',
     `User ID: ${userId || 'anonymous'}`,
     `Project ID: ${projectId}`,
-    `Generated: ${new Date().toISOString()}`,
-  ].join(' | ')
+    `Generated: ${generatedAt}`,
+  ]
+  if (forensicWatermark) {
+    parts.push(`Export ID: ${forensicWatermark.exportId}`)
+    parts.push(`Fingerprint: ${forensicWatermark.fingerprint}`)
+    parts.push(`Version: ${forensicWatermark.version}`)
+  }
+  return parts.join(' | ')
+}
+
+function getRequestUserId(req) {
+  return SessionManager.getLoggedInUserId(req.session)
+}
+
+function buildForensicWatermark(req, projectId) {
+  if (!isForensicWatermarkEnabled()) {
+    return null
+  }
+
+  const userId = getRequestUserId(req) || 'anonymous'
+  const generatedAt = new Date().toISOString()
+  const nonce = randomBytes(16).toString('hex')
+  const fingerprintInput = [
+    FORENSIC_WATERMARK_VERSION,
+    userId,
+    projectId,
+    generatedAt,
+    nonce,
+  ].join('|')
+  const fingerprint = createHmac('sha256', getFingerprintSecret())
+    .update(fingerprintInput)
+    .digest('hex')
+
+  return {
+    version: FORENSIC_WATERMARK_VERSION,
+    exportId: fingerprint.slice(0, 16),
+    fingerprint,
+    userId: String(userId),
+    projectId: String(projectId),
+    generatedAt,
+    nonce,
+  }
 }
 
 async function streamWatermarkedPdf(inputStream, res, watermarkRequest) {
@@ -139,7 +196,11 @@ async function streamWatermarkedPdf(inputStream, res, watermarkRequest) {
     const pageSize = await getFirstPageSize(inputPdfPath)
     await fs.writeFile(
       overlayTexPath,
-      buildWatermarkTex(pageSize, watermarkRequest.lines),
+      buildWatermarkTex(
+        pageSize,
+        watermarkRequest.lines,
+        watermarkRequest.forensicWatermark
+      ),
       'utf8'
     )
     await execFileAsync(
@@ -168,21 +229,29 @@ async function streamWatermarkedPdf(inputStream, res, watermarkRequest) {
       'qpdf overlay completed with warnings for PDF watermark'
     )
 
+    let hiddenForensicDataAdded = false
     try {
       await addHiddenWatermarkAnnotations({
         sourcePdfPath: overlayedPdfPath,
         outputPdfPath,
         markerText: watermarkRequest.invisibleText,
+        forensicWatermark: watermarkRequest.forensicWatermark,
         inputJsonPath: watermarkJsonPath,
         outputJsonPath: updatedWatermarkJsonPath,
       })
+      hiddenForensicDataAdded = true
     } catch (err) {
       logger.warn(
         { err },
-        'failed to add hidden PDF watermark annotations; using visible watermark only'
+        'failed to add hidden/forensic PDF watermark data; using visible watermark only'
       )
       await fs.copyFile(overlayedPdfPath, outputPdfPath)
     }
+
+    await recordForensicWatermarkExport(
+      watermarkRequest.forensicWatermark,
+      hiddenForensicDataAdded
+    )
 
     res.setHeader('Content-Type', 'application/pdf')
     res.writeHead(200)
@@ -238,10 +307,14 @@ function isUsablePageDimension(value) {
   return Number.isFinite(value) && value > 0 && value < 10000
 }
 
-function buildWatermarkTex(pageSize, lines) {
+function buildWatermarkTex(pageSize, lines, forensicWatermark) {
   const escapedLines = lines.map(escapeLatex)
   const nodeText = escapedLines.join('\\\\')
-  const nodes = buildVisibleWatermarkNodes(pageSize, nodeText)
+  const nodes = buildVisibleWatermarkNodes(
+    pageSize,
+    nodeText,
+    forensicWatermark
+  )
 
   return [
     '\\documentclass{article}',
@@ -260,26 +333,60 @@ function buildWatermarkTex(pageSize, lines) {
   ].join('\n')
 }
 
-function buildVisibleWatermarkNodes(pageSize, nodeText) {
+function buildVisibleWatermarkNodes(pageSize, nodeText, forensicWatermark) {
   const nodes = []
   const stepX = Math.max(260, pageSize.width / 2)
   const stepY = 140
+  let nodeIndex = 0
   for (let y = -pageSize.height; y < pageSize.height * 2; y += stepY) {
     for (let x = -pageSize.width; x < pageSize.width * 2; x += stepX) {
+      const perturbation = getVisibleWatermarkPerturbation(
+        forensicWatermark,
+        nodeIndex
+      )
+      nodeIndex += 1
       nodes.push(
-        `\\node[rotate=35,align=center,text opacity=0.13,text=black,font=\\sffamily\\bfseries\\fontsize{14}{16}\\selectfont] at ([xshift=${formatBp(
-          x
-        )}bp,yshift=${formatBp(y)}bp]current page.south west) {${nodeText}};`
+        `\\node[rotate=${formatDecimal(
+          perturbation.rotate
+        )},align=center,text opacity=${formatDecimal(
+          perturbation.opacity
+        )},text=black,font=\\sffamily\\bfseries\\fontsize{14}{16}\\selectfont] at ([xshift=${formatBp(
+          x + perturbation.x
+        )}bp,yshift=${formatBp(
+          y + perturbation.y
+        )}bp]current page.south west) {${nodeText}};`
       )
     }
   }
   return nodes
 }
 
+function getVisibleWatermarkPerturbation(forensicWatermark, nodeIndex) {
+  if (!forensicWatermark || !forensicWatermark.fingerprint) {
+    return {
+      x: 0,
+      y: 0,
+      rotate: 35,
+      opacity: 0.13,
+    }
+  }
+
+  const fingerprint = forensicWatermark.fingerprint
+  const byte = getFingerprintByte(fingerprint, nodeIndex)
+  const nextByte = getFingerprintByte(fingerprint, nodeIndex + 17)
+  return {
+    x: getFingerprintBit(fingerprint, nodeIndex * 2) ? 0.19 : -0.19,
+    y: getFingerprintBit(fingerprint, nodeIndex * 2 + 1) ? 0.23 : -0.23,
+    rotate: 35 + ((byte % 7) - 3) * 0.045,
+    opacity: 0.125 + (nextByte % 4) * 0.003,
+  }
+}
+
 async function addHiddenWatermarkAnnotations({
   sourcePdfPath,
   outputPdfPath,
   markerText,
+  forensicWatermark,
   inputJsonPath,
   outputJsonPath,
 }) {
@@ -305,7 +412,7 @@ async function addHiddenWatermarkAnnotations({
   )
 
   const qpdfJson = JSON.parse(await fs.readFile(inputJsonPath, 'utf8'))
-  addHiddenAnnotationsToQpdfJson(qpdfJson, markerText)
+  addHiddenAnnotationsToQpdfJson(qpdfJson, markerText, forensicWatermark)
   await fs.writeFile(outputJsonPath, JSON.stringify(qpdfJson), 'utf8')
 
   await execQpdfAsync(
@@ -318,7 +425,11 @@ async function addHiddenWatermarkAnnotations({
   )
 }
 
-function addHiddenAnnotationsToQpdfJson(qpdfJson, markerText) {
+function addHiddenAnnotationsToQpdfJson(
+  qpdfJson,
+  markerText,
+  forensicWatermark
+) {
   const qpdf = qpdfJson && qpdfJson.qpdf
   if (!Array.isArray(qpdf) || !qpdf[0] || !qpdf[1]) {
     throw new Error('unexpected qpdf JSON structure')
@@ -328,6 +439,16 @@ function addHiddenAnnotationsToQpdfJson(qpdfJson, markerText) {
   const objects = qpdf[1]
   const pages = getOrderedPages(qpdfJson, objects)
   let nextObjectId = getNextObjectId(metadata, objects)
+  const forensicWatermarkRef = buildForensicWatermarkObjectRef(
+    objects,
+    forensicWatermark,
+    pages.length,
+    nextObjectId
+  )
+  if (forensicWatermarkRef) {
+    nextObjectId += 1
+    attachForensicWatermarkToCatalog(qpdfJson, objects, forensicWatermarkRef)
+  }
   let addedAnnotations = 0
 
   for (const page of pages) {
@@ -339,6 +460,7 @@ function addHiddenAnnotationsToQpdfJson(qpdfJson, markerText) {
     }
 
     const pageNumber = getPageNumber(page, addedAnnotations)
+    attachForensicWatermarkToPage(pageValue, forensicWatermark, pageNumber)
     const annotationRef = `${nextObjectId} 0 R`
     nextObjectId += 1
     objects[getObjectKey(annotationRef)] = {
@@ -353,6 +475,101 @@ function addHiddenAnnotationsToQpdfJson(qpdfJson, markerText) {
   }
 
   metadata.maxobjectid = nextObjectId - 1
+}
+
+function buildForensicWatermarkObjectRef(
+  objects,
+  forensicWatermark,
+  pageCount,
+  objectId
+) {
+  if (!forensicWatermark) {
+    return null
+  }
+
+  const forensicWatermarkRef = `${objectId} 0 R`
+  objects[getObjectKey(forensicWatermarkRef)] = {
+    value: buildForensicWatermarkObject(forensicWatermark, pageCount),
+  }
+  return forensicWatermarkRef
+}
+
+function buildForensicWatermarkObject(forensicWatermark, pageCount) {
+  return {
+    '/Type': '/LUMIAForensicWatermark',
+    '/Version': forensicWatermark.version,
+    '/ExportID': `u:${forensicWatermark.exportId}`,
+    '/Fingerprint': `u:${forensicWatermark.fingerprint}`,
+    '/UserID': `u:${forensicWatermark.userId}`,
+    '/ProjectID': `u:${forensicWatermark.projectId}`,
+    '/GeneratedAt': `u:${forensicWatermark.generatedAt}`,
+    '/Nonce': `u:${forensicWatermark.nonce}`,
+    '/PageCount': pageCount,
+    '/Encoding':
+      'u:hmac-sha256;visible-grid-jitter;catalog-marker;page-marker;hidden-annotation',
+    '/FingerprintBits': `u:${getFingerprintBits(
+      forensicWatermark.fingerprint,
+      128
+    )}`,
+  }
+}
+
+function attachForensicWatermarkToCatalog(
+  qpdfJson,
+  objects,
+  forensicWatermarkRef
+) {
+  const catalogObject = getCatalogObject(qpdfJson, objects)
+  const catalogValue = catalogObject && catalogObject.value
+  if (!catalogValue) {
+    return
+  }
+
+  catalogValue['/LUMIAForensic'] = forensicWatermarkRef
+  catalogValue['/LUMIAForensicVersion'] = FORENSIC_WATERMARK_VERSION
+}
+
+function getCatalogObject(qpdfJson, objects) {
+  const metadata = qpdfJson && qpdfJson.qpdf && qpdfJson.qpdf[0]
+  const rootRef =
+    metadata && metadata.trailer && typeof metadata.trailer['/Root'] === 'string'
+      ? metadata.trailer['/Root']
+      : null
+  if (rootRef) {
+    const catalogObject = getPdfObject(objects, rootRef)
+    if (catalogObject) {
+      return catalogObject
+    }
+  }
+
+  for (const key of Object.keys(objects)) {
+    const object = objects[key]
+    const value = object && object.value
+    if (value && value['/Type'] === '/Catalog') {
+      return object
+    }
+  }
+  return null
+}
+
+function attachForensicWatermarkToPage(
+  pageValue,
+  forensicWatermark,
+  pageNumber
+) {
+  if (!forensicWatermark) {
+    return
+  }
+
+  const pageCode = createPageForensicCode(forensicWatermark, pageNumber)
+  pageValue['/LUMIAForensicPage'] = `u:${forensicWatermark.exportId}:${pageNumber}:${pageCode}`
+}
+
+function createPageForensicCode(forensicWatermark, pageNumber) {
+  return createHmac('sha256', getFingerprintSecret())
+    .update(`${forensicWatermark.fingerprint}|${pageNumber}`)
+    .digest('hex')
+    .slice(0, 16)
 }
 
 function getOrderedPages(qpdfJson, objects) {
@@ -467,6 +684,115 @@ function appendAnnotationRef(objects, pageValue, annotationRef) {
   pageValue['/Annots'] = [annotationRef]
 }
 
+async function recordForensicWatermarkExport(
+  forensicWatermark,
+  hiddenForensicDataAdded
+) {
+  if (!forensicWatermark) {
+    return
+  }
+
+  const forensicSettings = getForensicWatermarkSettings()
+  const exportLogPath =
+    forensicSettings.exportLogPath || DEFAULT_FORENSIC_EXPORT_LOG_PATH
+  const layers = ['visible-grid-jitter']
+  if (hiddenForensicDataAdded) {
+    layers.push('catalog-marker')
+    layers.push('page-marker')
+    layers.push('hidden-annotation')
+  }
+  const record = {
+    version: forensicWatermark.version,
+    exportId: forensicWatermark.exportId,
+    fingerprint: forensicWatermark.fingerprint,
+    userId: forensicWatermark.userId,
+    projectId: forensicWatermark.projectId,
+    generatedAt: forensicWatermark.generatedAt,
+    nonce: forensicWatermark.nonce,
+    layers,
+  }
+
+  try {
+    await fs.mkdir(Path.dirname(exportLogPath), { recursive: true })
+    await fs.appendFile(exportLogPath, `${JSON.stringify(record)}\n`, {
+      encoding: 'utf8',
+      mode: FORENSIC_EXPORT_LOG_FILE_MODE,
+    })
+    await fs.chmod(exportLogPath, FORENSIC_EXPORT_LOG_FILE_MODE)
+  } catch (err) {
+    logger.warn(
+      { err, exportLogPath },
+      'failed to record forensic PDF watermark export'
+    )
+  }
+}
+
+function isForensicWatermarkEnabled() {
+  return getForensicWatermarkSettings().enabled !== false
+}
+
+function getForensicWatermarkSettings() {
+  const userWatermarkSettings =
+    Settings && Settings.userWatermark ? Settings.userWatermark : {}
+  return userWatermarkSettings.forensic || {}
+}
+
+function getFingerprintSecret() {
+  const forensicSettings = getForensicWatermarkSettings()
+  if (forensicSettings.fingerprintSecret) {
+    return forensicSettings.fingerprintSecret
+  }
+
+  if (Settings && Settings.security && Settings.security.sessionSecret) {
+    return Settings.security.sessionSecret
+  }
+
+  if (!warnedAboutFallbackFingerprintSecret) {
+    logger.warn(
+      'forensic PDF watermark fingerprint secret is not configured; using process-local fallback'
+    )
+    warnedAboutFallbackFingerprintSecret = true
+  }
+  return PROCESS_FALLBACK_FINGERPRINT_SECRET
+}
+
+function getFingerprintBits(fingerprint, bitCount) {
+  let bits = ''
+  for (const character of String(fingerprint)) {
+    const value = Number.parseInt(character, 16)
+    if (!Number.isFinite(value)) {
+      continue
+    }
+    bits += value.toString(2).padStart(4, '0')
+    if (bitCount && bits.length >= bitCount) {
+      return bits.slice(0, bitCount)
+    }
+  }
+  return bitCount ? bits.slice(0, bitCount) : bits
+}
+
+function getFingerprintBit(fingerprint, bitIndex) {
+  const bits = getFingerprintBits(fingerprint)
+  if (!bits) {
+    return 0
+  }
+  return bits[bitIndex % bits.length] === '1' ? 1 : 0
+}
+
+function getFingerprintByte(fingerprint, byteIndex) {
+  const value = String(fingerprint)
+  if (value.length < 2) {
+    return 0
+  }
+  const hexIndex = (byteIndex * 2) % value.length
+  const hexByte =
+    hexIndex === value.length - 1
+      ? `${value[hexIndex]}${value[0]}`
+      : value.slice(hexIndex, hexIndex + 2)
+  const byte = Number.parseInt(hexByte, 16)
+  return Number.isFinite(byte) ? byte : 0
+}
+
 function escapeLatex(value) {
   return String(value).replace(/[\\{}$&#_%~^]/g, character => {
     switch (character) {
@@ -497,6 +823,10 @@ function escapeLatex(value) {
 }
 
 function formatBp(value) {
+  return Number(value).toFixed(3).replace(/\.?0+$/, '')
+}
+
+function formatDecimal(value) {
   return Number(value).toFixed(3).replace(/\.?0+$/, '')
 }
 

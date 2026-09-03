@@ -434,6 +434,19 @@ module.exports = {
       process.env.GITHUB_SYNC_PROXY_URL || 'http://192.168.102.101:7890',
   },
 
+  userWatermark: {
+    forensic: {
+      enabled: process.env.USER_WATERMARK_FORENSIC_ENABLED !== 'false',
+      exportLogPath:
+        process.env.USER_WATERMARK_EXPORT_LOG_PATH ||
+        Path.join('/tmp', 'overleaf-user-watermark-exports.jsonl'),
+      fingerprintSecret:
+        process.env.USER_WATERMARK_FINGERPRINT_SECRET ||
+        process.env.SESSION_SECRET ||
+        process.env.CRYPTO_RANDOM,
+    },
+  },
+
   aiFeatures: {
     freeTrialQuota: 'basic',
     unlimitedQuota: 'unlimited',
