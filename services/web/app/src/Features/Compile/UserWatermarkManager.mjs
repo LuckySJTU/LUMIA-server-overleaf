@@ -17,6 +17,7 @@ const DEFAULT_PAGE_SIZE = { width: 595.276, height: 841.89 }
 const MAX_PROCESS_OUTPUT_BUFFER_BYTES = 4 * 1024 * 1024
 const PROCESS_TIMEOUT_MS = 60 * 1000
 const HIDDEN_WATERMARK_ANNOTATION_FLAGS = 3
+const QPDF_EXIT_CODE_WARNINGS = 3
 
 async function isEnabledForProject(projectId) {
   const project = await ProjectGetter.promises.getProject(projectId, {
@@ -150,8 +151,7 @@ async function streamWatermarkedPdf(inputStream, res, watermarkRequest) {
         maxBuffer: MAX_PROCESS_OUTPUT_BUFFER_BYTES,
       }
     )
-    await execFileAsync(
-      'qpdf',
+    await execQpdfAsync(
       [
         '--overlay',
         overlayPdfPath,
@@ -164,7 +164,8 @@ async function streamWatermarkedPdf(inputStream, res, watermarkRequest) {
         cwd: tmpDir,
         timeout: PROCESS_TIMEOUT_MS,
         maxBuffer: MAX_PROCESS_OUTPUT_BUFFER_BYTES,
-      }
+      },
+      'qpdf overlay completed with warnings for PDF watermark'
     )
 
     try {
@@ -190,6 +191,19 @@ async function streamWatermarkedPdf(inputStream, res, watermarkRequest) {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(err => {
       logger.warn({ err, tmpDir }, 'failed to clean up PDF watermark temp dir')
     })
+  }
+}
+
+async function execQpdfAsync(args, options, warningMessage) {
+  try {
+    return await execFileAsync('qpdf', args, options)
+  } catch (err) {
+    if (err && err.code === QPDF_EXIT_CODE_WARNINGS) {
+      logger.warn({ err }, warningMessage || 'qpdf completed with warnings')
+      return { stdout: err.stdout || '', stderr: err.stderr || '' }
+    }
+
+    throw err
   }
 }
 
@@ -274,8 +288,7 @@ async function addHiddenWatermarkAnnotations({
     return
   }
 
-  await execFileAsync(
-    'qpdf',
+  await execQpdfAsync(
     [
       '--json-output',
       '--json-stream-data=none',
@@ -287,20 +300,21 @@ async function addHiddenWatermarkAnnotations({
     {
       timeout: PROCESS_TIMEOUT_MS,
       maxBuffer: MAX_PROCESS_OUTPUT_BUFFER_BYTES,
-    }
+    },
+    'qpdf JSON export completed with warnings for hidden PDF watermark'
   )
 
   const qpdfJson = JSON.parse(await fs.readFile(inputJsonPath, 'utf8'))
   addHiddenAnnotationsToQpdfJson(qpdfJson, markerText)
   await fs.writeFile(outputJsonPath, JSON.stringify(qpdfJson), 'utf8')
 
-  await execFileAsync(
-    'qpdf',
+  await execQpdfAsync(
     [sourcePdfPath, outputPdfPath, `--update-from-json=${outputJsonPath}`],
     {
       timeout: PROCESS_TIMEOUT_MS,
       maxBuffer: MAX_PROCESS_OUTPUT_BUFFER_BYTES,
-    }
+    },
+    'qpdf JSON update completed with warnings for hidden PDF watermark'
   )
 }
 
