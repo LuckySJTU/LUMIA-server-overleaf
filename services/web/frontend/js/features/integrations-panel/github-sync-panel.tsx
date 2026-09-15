@@ -24,16 +24,33 @@ type GitHubSyncResult = {
   reloadRequired?: boolean
 }
 
+type GitHubSyncStatusResult = {
+  syncStatus: 'clean' | 'local_changes' | 'remote_changes' | 'diverged'
+  branch?: string
+  lastSyncedCommit?: string
+  lastSyncedAt?: string
+  localBaseCommit?: string
+  remoteCommit?: string
+  localChanges?: GitHubSyncChange[]
+  localChangesTruncated?: boolean
+  remoteChanges?: GitHubSyncChange[]
+  remoteChangesTruncated?: boolean
+}
+
+type GitHubSyncChangeScope = 'local' | 'remote'
+
 type GitHubSyncChange = {
   status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'changed'
   path: string
   oldPath?: string
+  scope?: GitHubSyncChangeScope
 }
 
 type ActionFeedback = {
   message: string
   changes?: GitHubSyncChange[]
   changesTruncated?: boolean
+  changeTitle?: string
   reloadAfterMs?: number
 }
 
@@ -46,7 +63,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_branch: '分支名无效。',
   invalid_github_remote_url: '请输入有效的 GitHub 仓库地址。',
   invalid_proxy_url: '服务器 GitHub 代理配置无效，请联系管理员。',
-  local_changes_not_saved: '本地修改仍在保存中，请稍后再推送。',
+  local_changes_not_saved: '本地修改仍在保存中，请稍后再检查状态或推送。',
+  remote_branch_not_found: 'GitHub 远端分支不存在，请检查绑定分支或先推送。',
   remote_has_new_commits:
     'GitHub 上有新的提交。请先拉取，或者勾选强制推送后再试。',
 }
@@ -63,9 +81,11 @@ export default function GitHubSyncPanel() {
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [changeTitle, setChangeTitle] = useState('本轮文件变更')
   const [changes, setChanges] = useState<GitHubSyncChange[]>([])
   const [changesTruncated, setChangesTruncated] = useState(false)
   const reloadTimerRef = useRef<number | null>(null)
+  const autoStatusKeyRef = useRef<string | null>(null)
 
   const endpoint = `/project/${projectId}/github-sync`
 
@@ -96,6 +116,7 @@ export default function GitHubSyncPanel() {
       setLoadingAction(action)
       setError(null)
       setMessage(null)
+      setChangeTitle('本轮文件变更')
       setChanges([])
       setChangesTruncated(false)
       if (reloadTimerRef.current) {
@@ -108,6 +129,7 @@ export default function GitHubSyncPanel() {
           setMessage(feedback)
         } else {
           setMessage(feedback.message)
+          setChangeTitle(feedback.changeTitle || '本轮文件变更')
           setChanges(feedback.changes || [])
           setChangesTruncated(feedback.changesTruncated === true)
           if (feedback.reloadAfterMs) {
@@ -124,6 +146,71 @@ export default function GitHubSyncPanel() {
     },
     [],
   )
+
+  const runGitStatus = useCallback(
+    (statusToken: string) => {
+      void runAction('status', async () => {
+        setMessage('正在检查 GitHub 状态...')
+        await openDocs.awaitBufferedOps(
+          signalWithTimeout(signal, SAVE_BEFORE_PUSH_TIMEOUT_MS),
+        )
+        if (openDocs.hasUnsavedChanges()) {
+          throw new Error('local_changes_not_saved')
+        }
+        const result = await postJSON<GitHubSyncStatusResult>(
+          `${endpoint}/status`,
+          {
+            body: {
+              token: statusToken || undefined,
+            },
+          },
+        )
+        return {
+          message: gitStatusMessage(result),
+          changes: gitStatusChanges(result),
+          changesTruncated:
+            result.localChangesTruncated === true ||
+            result.remoteChangesTruncated === true,
+          changeTitle: '当前与 GitHub 的文件差异',
+        }
+      })
+    },
+    [endpoint, openDocs, runAction, signal],
+  )
+
+  useEffect(() => {
+    if (
+      !state.linked ||
+      loadingAction !== null ||
+      message ||
+      error ||
+      changes.length > 0
+    ) {
+      return
+    }
+
+    const statusKey = [
+      state.remoteUrl || '',
+      state.branch || DEFAULT_BRANCH,
+      state.lastSyncedCommit || '',
+    ].join(':')
+    if (autoStatusKeyRef.current === statusKey) {
+      return
+    }
+
+    autoStatusKeyRef.current = statusKey
+    runGitStatus('')
+  }, [
+    changes.length,
+    error,
+    loadingAction,
+    message,
+    runGitStatus,
+    state.branch,
+    state.lastSyncedCommit,
+    state.linked,
+    state.remoteUrl,
+  ])
 
   const handleLink = useCallback(() => {
     void runAction('link', async () => {
@@ -148,6 +235,10 @@ export default function GitHubSyncPanel() {
       return '仓库绑定已解除。'
     })
   }, [endpoint, runAction])
+
+  const handleStatus = useCallback(() => {
+    runGitStatus(token)
+  }, [runGitStatus, token])
 
   const handlePull = useCallback(() => {
     void runAction('pull', async () => {
@@ -297,6 +388,16 @@ export default function GitHubSyncPanel() {
             <OLButton
               size="sm"
               variant="secondary"
+              onClick={handleStatus}
+              isLoading={loadingAction === 'status'}
+              disabled={isBusy}
+              leadingIcon="fact_check"
+            >
+              检查状态
+            </OLButton>
+            <OLButton
+              size="sm"
+              variant="secondary"
               onClick={handlePull}
               isLoading={loadingAction === 'pull'}
               disabled={isBusy}
@@ -324,13 +425,15 @@ export default function GitHubSyncPanel() {
       )}
       {changes.length > 0 && (
         <div className="integrations-panel-sync-changes">
-          <span>本轮文件变更</span>
+          <span>{changeTitle}</span>
           <ul>
             {changes.map(change => (
               <li
-                key={`${change.status}:${change.oldPath || ''}:${change.path}`}
+                key={`${change.scope || 'sync'}:${change.status}:${
+                  change.oldPath || ''
+                }:${change.path}`}
               >
-                <strong>{changeStatusLabel(change.status)}</strong>
+                <strong>{changeStatusLabel(change.status, change.scope)}</strong>
                 {change.oldPath ? (
                   <>
                     <code>{change.oldPath}</code>
@@ -341,7 +444,7 @@ export default function GitHubSyncPanel() {
               </li>
             ))}
           </ul>
-          {changesTruncated && <p>仅显示前 100 个变更文件。</p>}
+          {changesTruncated && <p>变更文件较多，仅显示部分结果。</p>}
         </div>
       )}
       {error && (
@@ -360,20 +463,88 @@ function shortCommit(commit?: string) {
   return commit.slice(0, 7)
 }
 
-function changeStatusLabel(status: GitHubSyncChange['status']) {
-  switch (status) {
-    case 'added':
-      return '新增'
-    case 'modified':
-      return '修改'
-    case 'deleted':
-      return '删除'
-    case 'renamed':
-      return '重命名'
-    case 'copied':
-      return '复制'
+function gitStatusMessage(result: GitHubSyncStatusResult) {
+  const localCount = changeCountLabel(
+    result.localChanges,
+    result.localChangesTruncated,
+  )
+  const remoteCount = changeCountLabel(
+    result.remoteChanges,
+    result.remoteChangesTruncated,
+  )
+  const commitSuffix = gitStatusCommitSuffix(result)
+
+  switch (result.syncStatus) {
+    case 'local_changes':
+      return `本地有 ${localCount} 个待推送文件，远端暂无新变化${commitSuffix}。`
+    case 'remote_changes':
+      return `远端有 ${remoteCount} 个待拉取文件，本地暂无待推送文件${commitSuffix}。`
+    case 'diverged':
+      return `本地有 ${localCount} 个待推送文件，远端有 ${remoteCount} 个待拉取文件${commitSuffix}。`
     default:
-      return '变更'
+      return `当前项目与 GitHub 远端一致${commitSuffix}。`
+  }
+}
+
+function gitStatusChanges(result: GitHubSyncStatusResult) {
+  return [
+    ...(result.remoteChanges || []).map(change => ({
+      ...change,
+      scope: 'remote' as GitHubSyncChangeScope,
+    })),
+    ...(result.localChanges || []).map(change => ({
+      ...change,
+      scope: 'local' as GitHubSyncChangeScope,
+    })),
+  ]
+}
+
+function changeCountLabel(
+  changes: GitHubSyncChange[] | undefined,
+  truncated: boolean | undefined,
+) {
+  return `${changes?.length || 0}${truncated ? '+' : ''}`
+}
+
+function gitStatusCommitSuffix(result: GitHubSyncStatusResult) {
+  const commits: string[] = []
+  if (result.localBaseCommit) {
+    commits.push(`本地基准 ${shortCommit(result.localBaseCommit)}`)
+  }
+  if (result.remoteCommit) {
+    commits.push(`远端 ${shortCommit(result.remoteCommit)}`)
+  }
+  return commits.length > 0 ? `（${commits.join('，')}）` : ''
+}
+
+function changeStatusLabel(
+  status: GitHubSyncChange['status'],
+  scope?: GitHubSyncChangeScope,
+) {
+  const statusLabel = (() => {
+    switch (status) {
+      case 'added':
+        return '新增'
+      case 'modified':
+        return '修改'
+      case 'deleted':
+        return '删除'
+      case 'renamed':
+        return '重命名'
+      case 'copied':
+        return '复制'
+      default:
+        return '变更'
+    }
+  })()
+
+  switch (scope) {
+    case 'local':
+      return `本地${statusLabel}`
+    case 'remote':
+      return `远端${statusLabel}`
+    default:
+      return statusLabel
   }
 }
 

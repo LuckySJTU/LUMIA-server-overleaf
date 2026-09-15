@@ -31,6 +31,8 @@ const pullSchema = z.object({
     .optional(),
 })
 
+const gitStatusSchema = pullSchema
+
 const pushSchema = z.object({
   params: z.object({
     Project_id: zz.objectId(),
@@ -48,6 +50,15 @@ const pushSchema = z.object({
 async function status(req, res) {
   const { params } = parseReq(req, projectParamSchema)
   res.json(await GitHubSyncManager.getState(params.Project_id))
+}
+
+async function gitStatus(req, res) {
+  const { params, body = {} } = parseReq(req, gitStatusSchema)
+  const result = await GitHubSyncManager.compareWithGitHub({
+    projectId: params.Project_id,
+    token: getToken(req, body),
+  })
+  res.json(result)
 }
 
 async function link(req, res) {
@@ -119,6 +130,7 @@ function handleGithubSyncError(handler) {
 
 export default {
   status: handleGithubSyncError(status),
+  gitStatus: handleGithubSyncError(gitStatus),
   link: handleGithubSyncError(link),
   unlink: handleGithubSyncError(unlink),
   pull: handleGithubSyncError(pull),

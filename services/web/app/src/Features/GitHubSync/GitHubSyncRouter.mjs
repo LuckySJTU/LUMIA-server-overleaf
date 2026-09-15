@@ -20,12 +20,24 @@ export default {
         params: ['Project_id'],
       }),
     ]
+    const projectReadMiddleware = [
+      AuthenticationController.requireLogin(),
+      AuthorizationMiddleware.ensureUserCanReadProject,
+      RateLimiterMiddleware.rateLimit(rateLimiters.githubSync, {
+        params: ['Project_id'],
+      }),
+    ]
 
     webRouter.get(
       '/project/:Project_id/github-sync',
       AuthenticationController.requireLogin(),
       AuthorizationMiddleware.ensureUserCanReadProject,
       GitHubSyncController.status
+    )
+    webRouter.post(
+      '/project/:Project_id/github-sync/status',
+      ...projectReadMiddleware,
+      GitHubSyncController.gitStatus
     )
     webRouter.post(
       '/project/:Project_id/github-sync/link',

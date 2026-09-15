@@ -315,6 +315,143 @@ async function pushToGitHub({
   }
 }
 
+async function compareWithGitHub({ projectId, token }) {
+  const state = await requireLinkedState(projectId)
+  const resolvedProxyUrl = getProxyUrl()
+  const { dir, remoteCommit } = await prepareCheckout(state, token, {
+    allowMissingRemoteBranch: true,
+    proxyUrl: resolvedProxyUrl,
+  })
+  if (!remoteCommit) {
+    throw new GitHubSyncError('remote_branch_not_found', 404)
+  }
+  const localBaseCommit = await resolveLocalBaseCommit({
+    dir,
+    state,
+    remoteCommit,
+    token,
+    proxyUrl: resolvedProxyUrl,
+  })
+
+  const remoteChangeSummary = await summarizePullChanges({
+    dir,
+    previousCommit: state.lastSyncedCommit,
+    nextCommit: remoteCommit,
+    token,
+    proxyUrl: resolvedProxyUrl,
+  })
+  await DocumentUpdaterHandler.promises.flushProjectToMongo(projectId)
+  const localChangeSummary = await summarizeProjectChangesAgainstCommit({
+    projectId,
+    dir,
+    commit: localBaseCommit,
+    token,
+    proxyUrl: resolvedProxyUrl,
+  })
+
+  return {
+    syncStatus: compareSyncStatus(localChangeSummary, remoteChangeSummary),
+    branch: state.branch,
+    lastSyncedCommit: state.lastSyncedCommit,
+    lastSyncedAt: state.lastSyncedAt,
+    localBaseCommit,
+    remoteCommit,
+    localChanges: localChangeSummary.files,
+    localChangesTruncated: localChangeSummary.truncated,
+    remoteChanges: remoteChangeSummary.files,
+    remoteChangesTruncated: remoteChangeSummary.truncated,
+  }
+}
+
+async function resolveLocalBaseCommit({
+  dir,
+  state,
+  remoteCommit,
+  token,
+  proxyUrl,
+}) {
+  if (
+    state.lastSyncedCommit &&
+    (await commitExists(dir, state.lastSyncedCommit, token, proxyUrl))
+  ) {
+    return state.lastSyncedCommit
+  }
+  return remoteCommit
+}
+
+async function summarizeProjectChangesAgainstCommit({
+  projectId,
+  dir,
+  commit,
+  token,
+  proxyUrl,
+}) {
+  if (!commit) {
+    throw new GitHubSyncError('remote_branch_not_found', 404)
+  }
+
+  const tmpParent = await fs.promises.mkdtemp(
+    path.join(getRootDir(), `${projectIdString(projectId)}-status-`)
+  )
+  const worktreeDir = path.join(tmpParent, 'worktree')
+  let worktreeAdded = false
+
+  try {
+    await git(['worktree', 'add', '--detach', worktreeDir, commit], {
+      cwd: dir,
+      token,
+      proxyUrl,
+    })
+    worktreeAdded = true
+    await replaceCheckoutWithProject(projectId, worktreeDir)
+    await git(['add', '-A'], { cwd: worktreeDir, token, proxyUrl })
+    return await summarizeCachedChanges({
+      dir: worktreeDir,
+      token,
+      proxyUrl,
+    })
+  } finally {
+    if (worktreeAdded) {
+      try {
+        await git(['worktree', 'remove', '--force', worktreeDir], {
+          cwd: dir,
+          token,
+          proxyUrl,
+        })
+      } catch (error) {
+        logger.warn(
+          { err: error, projectId, worktreeDir },
+          'failed to remove github sync status worktree'
+        )
+      }
+    }
+    await fs.promises.rm(tmpParent, { recursive: true, force: true })
+    try {
+      await git(['worktree', 'prune'], { cwd: dir, token, proxyUrl })
+    } catch (error) {
+      logger.warn(
+        { err: error, projectId, worktreeDir },
+        'failed to prune github sync status worktree'
+      )
+    }
+  }
+}
+
+function compareSyncStatus(localChangeSummary, remoteChangeSummary) {
+  const hasLocalChanges = localChangeSummary.files.length > 0
+  const hasRemoteChanges = remoteChangeSummary.files.length > 0
+  if (hasLocalChanges && hasRemoteChanges) {
+    return 'diverged'
+  }
+  if (hasLocalChanges) {
+    return 'local_changes'
+  }
+  if (hasRemoteChanges) {
+    return 'remote_changes'
+  }
+  return 'clean'
+}
+
 async function summarizePullChanges({
   dir,
   previousCommit,
@@ -1327,6 +1464,7 @@ async function pathExists(target) {
 export default {
   GitHubSyncError,
   getState: async projectId => serializeState(await getState(projectId)),
+  compareWithGitHub,
   linkProject,
   unlinkProject,
   pullFromGitHub,
