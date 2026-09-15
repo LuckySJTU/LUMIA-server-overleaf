@@ -259,7 +259,8 @@ FROM ${SOURCE_IMAGE}
 
 ARG TEXLIVE_PACKAGES
 
-RUN tlmgr install ${TEXLIVE_PACKAGES} \
+RUN tlmgr update --self \
+ && tlmgr install ${TEXLIVE_PACKAGES} \
  && tlmgr path add \
  && mktexlsr
 EOF
