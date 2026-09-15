@@ -46,7 +46,7 @@
    - This keeps Chinese and common typography support on top of `scheme-medium`.
    - The default now also covers a broader ML/NLP paper stack used by ICML, NeurIPS, ICLR, EMNLP and similar templates: `array.sty`, `tabularx.sty`, `multicol.sty`, `afterpage.sty` and `xspace.sty` via `tools`, `subcaption` via `caption`, `nicefrac` via `units`, `stfloats` via `sttools`, `balance` via `preprint`, `pifont` via `psnfss`, `newtxmath` via `newtx`, `extarticle` via `extsizes`, `xifthen` plus `ifmtarg`, `datetime` plus `fmtcount`, `XCharter` plus `fontaxes`, `forest` plus `elocalloc`, `changes` plus `xstring` and `truncate`, `bclogo` with `mdframed` and TikZ support via `pgf`, `epigraph` plus `nextpage`, `CJKutf8` via `cjk`, `textgreek` with Greek font support via `greek-fontenc`, `cbfonts`, and `cbfonts-fd`, `xurl.sty` via `xurl`, `\forloop` via `forloop`, and `FloatBarrier`/`placeins.sty` via `placeins`, plus common packages for algorithms, lists, tables, fonts, notes, colors, headers/footers and hyperlinks.
    - Add more package names separated by spaces if your templates need them, for example `"collection-langcjk microtype tools caption booktabs multirow cleveref mathtools todonotes xcolor hyperref enumitem algorithms algorithmicx natbib url units wrapfig float sttools adjustbox threeparttable tablefootnote soul ulem listings pgfplots siunitx makecell preprint forloop xifthen cmap psnfss textcase changepage datetime fancyhdr lastpage titlesec needspace kvoptions tcolorbox fontawesome5 xcharter newtx zlmtt extsizes geometry colortbl minted"`.
-   - If you change either TeX Live variable after the base image already exists, set `OVERLEAF_FORCE_BASE_REBUILD=true` for the next build.
+   - If you change either TeX Live variable after the base image already exists, `deploy.sh` will build the app image first and then derive the configured patched runtime image with the requested TeX Live packages. Set `OVERLEAF_FORCE_BASE_REBUILD=true` only when you intentionally want to rebuild the full base image.
    - Conference template files themselves such as `icml2026.sty`, `neurips_2026.sty`, `iclr2026_conference.sty`, or ACL/EMNLP style files are not installed from TeX Live. Those still need to live inside the project source tree.
    - The curated build-from-scratch package manifest is tracked in [texlive-packages.lumia.md](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/deploy/texlive-packages.lumia.md).
 11. `OVERLEAF_PHUSION_BASEIMAGE_TAG` controls the parent image used by [server-ce/Dockerfile-base](/Users/yxwang/Documents/codex_lumia/LUMIA-server-overleaf/server-ce/Dockerfile-base).
@@ -65,6 +65,7 @@ Notes:
 - This avoids failures from stale external `sharelatex/sharelatex-base:latest` images that still carry Node 16.
 - The first base-image build is heavy because it includes TeX Live. Later runs reuse the local Docker cache and the existing `lumia-overleaf-base:latest` image.
 - If you intentionally want to rebuild the base image, set `OVERLEAF_FORCE_BASE_REBUILD=true` in the env file.
+- When `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` is set and `OVERLEAF_IMAGE` points at a `:texlive-patched` tag, `deploy.sh` builds the source app image as `:latest`, then derives the patched image. This keeps source redeploys from overwriting the TeX Live patched runtime image.
 - If the build fails while pulling `phusion/baseimage:noble-1.0.2` with a mirror-side `429 Too Many Requests`, either retry later or load the image locally and point `OVERLEAF_PHUSION_BASEIMAGE_TAG` at that local tag.
 - If TeX package installation fails near the end of a long `tlmgr install`, the visible final package line is often just the last meta-package processed, not the real failing dependency. Installing a larger built-in scheme first is usually more reliable.
 
@@ -82,7 +83,7 @@ rm -rf deploy/data/mongo
 
 ## Patch an already built image with extra TeX packages
 
-If the site is already deployed and you only want to add a few missing TeX packages, you do not need to rebuild the full base image. Build a small derived image on top of the current Overleaf image instead:
+If the site is already deployed and you only want to add a few missing TeX packages, you do not need to rebuild the full base image. Build a small derived image on top of the app image instead:
 
 ```bash
 ./deploy/extend-texlive-image.sh ./deploy/overleaf.lumia.env placeins
@@ -97,7 +98,7 @@ sed -i 's#^OVERLEAF_IMAGE=.*#OVERLEAF_IMAGE=lumia-overleaf:texlive-patched#' dep
 docker compose --env-file deploy/overleaf.lumia.env -f deploy/docker-compose.lumia.yml up -d
 ```
 
-This approach is useful for incremental fixes. For long-term reproducibility, also add the same packages to `OVERLEAF_TEXLIVE_EXTRA_PACKAGES` and rebuild the base image later.
+This approach is useful for one-off incremental fixes. For long-term reproducibility, also add the same packages to `OVERLEAF_TEXLIVE_EXTRA_PACKAGES`; future `deploy.sh` runs will preserve the patched runtime image instead of overwriting it with the app build.
 
 ## Online backup
 

@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
 ENV_FILE=${1:-"$SCRIPT_DIR/overleaf.lumia.env"}
+APP_BUILD_IMAGE_OVERRIDE=${OVERLEAF_APP_BUILD_IMAGE:-}
 BASE_IMAGE=${OVERLEAF_BASE_TAG:-lumia-overleaf-base:latest}
 APP_IMAGE=${OVERLEAF_IMAGE:-lumia-overleaf:latest}
 FORCE_BASE_REBUILD=${OVERLEAF_FORCE_BASE_REBUILD:-false}
@@ -29,6 +30,10 @@ TEXLIVE_EXTRA_PACKAGES="${OVERLEAF_TEXLIVE_EXTRA_PACKAGES:-$TEXLIVE_EXTRA_PACKAG
 
 if [[ "$BASE_IMAGE" == "sharelatex/sharelatex-base:latest" ]]; then
   BASE_IMAGE="lumia-overleaf-base:latest"
+fi
+
+if [[ -n "$APP_BUILD_IMAGE_OVERRIDE" ]]; then
+  APP_IMAGE="$APP_BUILD_IMAGE_OVERRIDE"
 fi
 
 if [[ "$FORCE_BASE_REBUILD" == "true" ]] || ! docker image inspect "$BASE_IMAGE" >/dev/null 2>&1; then

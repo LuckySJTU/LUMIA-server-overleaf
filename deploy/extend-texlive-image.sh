@@ -23,7 +23,7 @@ set -a
 . "$ENV_FILE"
 set +a
 
-SOURCE_IMAGE=${OVERLEAF_IMAGE:-lumia-overleaf:latest}
+SOURCE_IMAGE=${OVERLEAF_SOURCE_IMAGE:-${OVERLEAF_IMAGE:-lumia-overleaf:latest}}
 if [[ "$SOURCE_IMAGE" == *:* ]]; then
   TARGET_IMAGE_DEFAULT="${SOURCE_IMAGE%:*}:texlive-patched"
 else
