@@ -7,6 +7,10 @@
   --integrations-panel-card-button-background: var(--bg-dark-primary);
   --integrations-panel-badge-color: var(--content-primary);
   --integrations-panel-badge-background: var(--bg-light-tertiary);
+  --integrations-panel-sync-feedback-bg: var(--bg-dark-secondary);
+  --integrations-panel-sync-feedback-border: var(--border-divider-dark);
+  --integrations-panel-sync-feedback-code-bg: var(--bg-dark-tertiary);
+  --integrations-panel-sync-feedback-code-color: var(--content-primary-dark);
 }
 
 @include theme('light') {
@@ -18,6 +22,10 @@
   --integrations-panel-card-button-background: var(--white);
   --integrations-panel-badge-color: var(--content-primary);
   --integrations-panel-badge-background: var(--bg-light-tertiary);
+  --integrations-panel-sync-feedback-bg: var(--bg-light-secondary);
+  --integrations-panel-sync-feedback-border: var(--border-divider);
+  --integrations-panel-sync-feedback-code-bg: var(--white);
+  --integrations-panel-sync-feedback-code-color: var(--content-primary);
 }
 
 .integrations-panel {
@@ -184,15 +192,17 @@
 }
 
 .integrations-panel-sync-changes {
-  background-color: var(--bg-light-secondary);
+  background-color: var(--integrations-panel-sync-feedback-bg);
+  border: 1px solid var(--integrations-panel-sync-feedback-border);
   border-radius: var(--border-radius-medium);
+  color: var(--integrations-panel-color);
   font-size: var(--font-size-01);
   line-height: 1.4;
   margin-top: var(--spacing-02);
   padding: var(--spacing-02) var(--spacing-03);
 
   > span {
-    color: var(--integrations-panel-description-color);
+    color: var(--integrations-panel-color);
     display: block;
     margin-bottom: var(--spacing-01);
   }
@@ -218,7 +228,10 @@
   }
 
   code {
-    color: var(--integrations-panel-color);
+    background-color: var(--integrations-panel-sync-feedback-code-bg);
+    border-radius: var(--border-radius-base);
+    color: var(--integrations-panel-sync-feedback-code-color);
+    padding: 0 var(--spacing-01);
     word-break: break-all;
   }
 
