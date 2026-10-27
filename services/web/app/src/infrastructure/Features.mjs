@@ -7,8 +7,9 @@ const supportModuleAvailable =
 const symbolPaletteModuleAvailable =
   Settings.moduleImportSequence?.includes('symbol-palette')
 
-const trackChangesModuleAvailable =
-  Settings.moduleImportSequence?.includes('track-changes')
+const trackChangesAvailable =
+  Boolean(Settings.enableComments) ||
+  Boolean(Settings.moduleImportSequence?.includes('track-changes'))
 
 /**
  * @typedef {Object} Settings
@@ -90,7 +91,7 @@ const Features = {
       case 'symbol-palette':
         return symbolPaletteModuleAvailable
       case 'track-changes':
-        return trackChangesModuleAvailable
+        return trackChangesAvailable
       default:
         throw new Error(`unknown feature: ${feature}`)
     }

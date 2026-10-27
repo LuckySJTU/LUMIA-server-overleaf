@@ -17,6 +17,8 @@ import { postJSON } from '@/infrastructure/fetch-json'
 import useEventListener from '@/shared/hooks/use-event-listener'
 import { ProjectMetadata } from '@/shared/context/types/project-metadata'
 import { usePermissionsContext } from '@/features/ide-react/context/permissions-context'
+import { useModalsContext } from '@/features/ide-react/context/modals-context'
+import { useTranslation } from 'react-i18next'
 
 export type TrackChangesState = {
   onForEveryone: boolean
@@ -51,6 +53,8 @@ export const TrackChangesStateProvider: FC<React.PropsWithChildren> = ({
   const { projectId, project, features } = useProjectContext()
   const user = useUserContext()
   const { setWantTrackChanges } = useEditorPropertiesContext()
+  const { showGenericMessageModal } = useModalsContext()
+  const { t } = useTranslation()
 
   // TODO: update project.trackChangesState instead?
   const [trackChangesValue, setTrackChangesValue] = useState<
@@ -88,11 +92,23 @@ export const TrackChangesStateProvider: FC<React.PropsWithChildren> = ({
 
   const saveTrackChanges = useCallback(
     async (trackChangesBody: SaveTrackChangesRequestBody) => {
-      postJSON(`/project/${projectId}/track_changes`, {
-        body: trackChangesBody,
-      })
+      try {
+        const result = await postJSON<{
+          trackChangesState: ProjectMetadata['trackChangesState']
+        }>(`/project/${projectId}/track_changes`, {
+          body: trackChangesBody,
+        })
+        if (result?.trackChangesState !== undefined) {
+          setTrackChangesValue(result.trackChangesState)
+        }
+      } catch {
+        showGenericMessageModal(
+          t('track_changes'),
+          t('generic_something_went_wrong')
+        )
+      }
     },
-    [projectId]
+    [projectId, showGenericMessageModal, t]
   )
 
   const saveTrackChangesForCurrentUser = useCallback(
@@ -100,13 +116,12 @@ export const TrackChangesStateProvider: FC<React.PropsWithChildren> = ({
       if (user.id) {
         saveTrackChanges({
           on_for: {
-            ...onForMembers,
             [user.id]: trackChanges,
           },
         })
       }
     },
-    [onForMembers, user.id, saveTrackChanges]
+    [user.id, saveTrackChanges]
   )
 
   const actions = useMemo(
@@ -129,7 +144,6 @@ export const TrackChangesStateProvider: FC<React.PropsWithChildren> = ({
         const value = onForMembers[user.id]
         actions.saveTrackChanges({
           on_for: {
-            ...onForMembers,
             [user.id]: !value,
           },
         })
