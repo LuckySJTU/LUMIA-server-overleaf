@@ -53,6 +53,15 @@
    - Default is `phusion/baseimage:noble-1.0.2`.
    - If your Docker daemon's mirror rate-limits Docker Hub, point this to a locally loaded image tag or another reachable registry path.
 
+## Personal and operations support links
+
+- `OVERLEAF_PERSONAL_WEBSITE_URL` defaults to `https://github.com/LuckySJTU`.
+- `OVERLEAF_OPERATIONS_SUPPORT_URL` defaults to `/support`.
+- Set either value to an empty string to hide that link. The editor help menu uses the same community links as the site footer.
+- A custom `OVERLEAF_LEFT_FOOTER` or `OVERLEAF_RIGHT_FOOTER` replaces the corresponding default list. Keep `group: "lumia-community"` on custom entries that should also appear in the editor help menu.
+- `/support` contains a text-only QR code, not a payment request. It encodes only the thank-you message in the generator, with no URL or payment data.
+- Regenerate the PNG with `node services/web/scripts/generate-lumia-support-qr.mjs` after installing the existing web development dependencies.
+
 ## Build
 
 ```bash

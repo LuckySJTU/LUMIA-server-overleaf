@@ -6,6 +6,9 @@ export type FooterItem = {
   url?: string
   class?: string
   label?: string
+  group?: 'lumia-community'
+  icon?: string
+  target?: '_blank' | '_self'
 }
 
 export type FooterMetadata = {

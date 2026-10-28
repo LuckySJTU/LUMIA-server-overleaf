@@ -11,6 +11,11 @@ import {
 export default function RailHelpDropdown() {
   const showSupport = getMeta('ol-showSupport')
   const showDocumentation = getMeta('ol-wikiEnabled')
+  const footer = getMeta('ol-footer')
+  const communityLinks = [
+    ...(footer?.leftItems ?? []),
+    ...(footer?.rightItems ?? []),
+  ].filter(item => item.group === 'lumia-community' && item.url)
   const { t } = useTranslation()
   const { setActiveModal } = useRailContext()
   const openKeyboardShortcutsModal = useCallback(() => {
@@ -43,6 +48,18 @@ export default function RailHelpDropdown() {
           </DropdownItem>
         </>
       )}
+      {communityLinks.length > 0 && <DropdownDivider />}
+      {communityLinks.map(item => (
+        <DropdownItem
+          key={`${item.text}:${item.url}`}
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          leadingIcon={item.icon}
+        >
+          {item.translatedText || t(item.text)}
+        </DropdownItem>
+      ))}
     </DropdownMenu>
   )
 }

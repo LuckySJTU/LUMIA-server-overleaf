@@ -23,6 +23,13 @@ export default {
         title: 'Open Source Notice',
       })
     })
+    AuthenticationController.addEndpointToLoginWhitelist('/support')
+    webRouter.get('/support', (req, res) => {
+      res.render('general/support', {
+        title: 'Support LUMIA operations',
+        showThinFooter: true,
+      })
+    })
 
     webRouter.get(
       '/planned_maintenance',

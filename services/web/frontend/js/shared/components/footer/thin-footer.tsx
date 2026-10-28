@@ -12,6 +12,7 @@ function FooterItemLi({
   url: href,
   class: className,
   label,
+  target,
 }: FooterItem) {
   const textToDisplay = translatedText || text
 
@@ -23,6 +24,8 @@ function FooterItemLi({
     href,
     className,
     'aria-label': label,
+    target,
+    rel: target === '_blank' ? 'noopener noreferrer' : undefined,
   }
 
   return (

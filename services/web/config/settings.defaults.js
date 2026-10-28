@@ -7,6 +7,25 @@ let defaultFeatures, siteUrl
 const seconds = 1000
 const minutes = 60 * seconds
 
+const communityLinks = [
+  {
+    text: 'personal_homepage',
+    url:
+      process.env.OVERLEAF_PERSONAL_WEBSITE_URL ??
+      'https://github.com/LuckySJTU',
+    group: 'lumia-community',
+    icon: 'person',
+    target: '_blank',
+  },
+  {
+    text: 'support_operations',
+    url: process.env.OVERLEAF_OPERATIONS_SUPPORT_URL ?? '/support',
+    group: 'lumia-community',
+    icon: 'favorite',
+    target: '_blank',
+  },
+].filter(item => item.url)
+
 // These credentials are used for authenticating api requests
 // between services that may need to go over public channels
 const httpAuthUser = process.env.WEB_API_USER
@@ -818,6 +837,7 @@ module.exports = {
         text: 'Open source notice',
         url: '/open-source',
       },
+      ...communityLinks,
     ],
 
     right_footer: [
